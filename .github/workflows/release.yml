@@ -30,7 +30,7 @@ jobs:
       cli_tag: ${{ steps.release.outputs['cli--tag_name'] }}
     steps:
       - id: release
-        uses: googleapis/release-please-action@v4
+        uses: googleapis/release-please-action@v5
         with:
           # Optional PAT / GitHub App token so CI runs on release PRs (PRs opened with GITHUB_TOKEN trigger no workflows).
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
@@ -62,11 +62,11 @@ jobs:
       contents: read
       id-token: write # npm Trusted Publishing (OIDC) and provenance
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.release-please.outputs.cli_tag }}
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
