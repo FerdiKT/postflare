@@ -62,7 +62,7 @@ jobs:
       contents: read
       id-token: write # npm Trusted Publishing (OIDC) and provenance
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.release-please.outputs.cli_tag }}
           persist-credentials: false
