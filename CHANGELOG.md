@@ -5,6 +5,13 @@ All notable changes to the Postflare server and web app. The `postflare` CLI has
 is maintained by [release-please](https://github.com/googleapis/release-please) from
 [Conventional Commits](https://www.conventionalcommits.org) (see [docs/RELEASING.md](docs/RELEASING.md)).
 
+## [0.2.0](https://github.com/FerdiKT/postflare/compare/v0.1.0...v0.2.0) (2026-10-13)
+
+
+### Features
+
+* version info, daily update check and release automation ([fdf0f1d](https://github.com/FerdiKT/postflare/commit/fdf0f1dd5dccc6b02d646da7aacbcd5988da888a))
+
 ## 0.1.0 (2026-10-13)
 
 First public release.
