@@ -46,6 +46,37 @@ is maintained by [release-please](https://github.com/googleapis/release-please) 
   (`0 3 * * *`), and analytics collection moved to its own trigger (`7,22,37,52 * * * *`) so each run stays under the Free plan's 50 D1 queries. Add both to your `wrangler.local.jsonc` / Deploy-button `wrangler.jsonc` triggers.
 * Media used by a draft, scheduled, publishing or needs-check post cannot be deleted (409 with the post ids).
 
+## [0.2.0](https://github.com/FerdiKT/postflare/compare/v0.1.0...v0.2.0) (2026-10-16)
+
+
+### Features
+
+* admin Overview and usage_events metering ([d6c9ed3](https://github.com/FerdiKT/postflare/commit/d6c9ed35dc8326756ed61b78b6f516941d49347b))
+* answer a reply under a published post (replyTo / pf posts comment --reply-to) ([51a8882](https://github.com/FerdiKT/postflare/commit/51a8882e3054c16822c09eb7ae891e22fdcd9823))
+* **calendar:** show platform logos on calendar items ([2850dd7](https://github.com/FerdiKT/postflare/commit/2850dd7b0eefcb28ae4b46dd7e2e1d5959a2ae5f))
+* comment under a published post (POST /api/posts/:id/comments, pf posts comment) ([03290a8](https://github.com/FerdiKT/postflare/commit/03290a83c3abad81b19d92585637dc2f8d300685))
+* **landing:** launch — GitHub and Deploy to Cloudflare buttons are live ([36958b6](https://github.com/FerdiKT/postflare/commit/36958b6cd9050e5a49cc909c105063e834b0a5e9))
+* mark X as verified; landing follow button points to [@postflareio](https://github.com/postflareio) ([c07665f](https://github.com/FerdiKT/postflare/commit/c07665f8ec4e6e00e34e973917efb918ed86c169))
+* Meta data deletion callback and status page ([9c4335c](https://github.com/FerdiKT/postflare/commit/9c4335c339b75df5e965fae76a98efdc182aa07c))
+* platform status (verified/beta/experimental), opt-in experimental integrations, pre-launch landing ([7ad2529](https://github.com/FerdiKT/postflare/commit/7ad252971fe9419f782bd96fababefa919dad058))
+* playbooks — recipe library for agent-written posts, with attribution and ranking ([f2cef8e](https://github.com/FerdiKT/postflare/commit/f2cef8e1434c3e688f4ab8f8c205ac76e2e70298))
+* **playbooks:** research-backed v2 of all built-ins, with sources ([9a7e3d0](https://github.com/FerdiKT/postflare/commit/9a7e3d0807b22baa7583749b23878487cd25aa70))
+* version info, daily update check and release automation ([fdf0f1d](https://github.com/FerdiKT/postflare/commit/fdf0f1dd5dccc6b02d646da7aacbcd5988da888a))
+
+
+### Bug Fixes
+
+* **cron:** run every job from one */5 trigger ([64efb36](https://github.com/FerdiKT/postflare/commit/64efb362a8222060edf226a11405813842ed6154))
+* no double posts (commit semantics + needs_check), token refresh storm, D1 per-invocation budget, media lifecycle ([87d7892](https://github.com/FerdiKT/postflare/commit/87d7892e7a9a8f11d09fa4af27262aef0cd0c266))
+* platform auth errors no longer sign the user out; tests for post comments ([72073db](https://github.com/FerdiKT/postflare/commit/72073db9175a27d11720d9e9dda01c21a0c9f52e))
+* **x:** video uploads hung forever; keep publishing posts on the dashboard ([276ca15](https://github.com/FerdiKT/postflare/commit/276ca157aaae1e344540acbdb563bd22d97661b2))
+
+
+### Documentation
+
+* **privacy:** Meta data section, accurate media retention ([4360edf](https://github.com/FerdiKT/postflare/commit/4360edf05389d450e58e10484aea0451b6580cf3))
+* v0.1.0 release notes cover playbooks, publish safety, admin overview ([c9f25b6](https://github.com/FerdiKT/postflare/commit/c9f25b6f6829e8881323ffd5a1130c49a668d9c1))
+
 ## 0.1.0 (2026-10-13)
 
 First public release.
