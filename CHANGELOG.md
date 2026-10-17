@@ -46,6 +46,32 @@ is maintained by [release-please](https://github.com/googleapis/release-please) 
   (`0 3 * * *`), and analytics collection moved to its own trigger (`7,22,37,52 * * * *`) so each run stays under the Free plan's 50 D1 queries. Add both to your `wrangler.local.jsonc` / Deploy-button `wrangler.jsonc` triggers.
 * Media used by a draft, scheduled, publishing or needs-check post cannot be deleted (409 with the post ids).
 
+## [0.3.0](https://github.com/FerdiKT/postflare/compare/v0.2.0...v0.3.0) (2026-10-17)
+
+
+### Features
+
+* **accounts:** account groups (workspace-scoped brand/project folders) ([95f28a6](https://github.com/FerdiKT/postflare/commit/95f28a685c81a8bd1682ee2fe017ed4bebe9d5c2))
+* **auth:** email sign-in links (magic link) ([d404fd7](https://github.com/FerdiKT/postflare/commit/d404fd79d76ffd4cb4819671a59b32af1a5a9391))
+* **auth:** magic links behind an instance admin toggle, Cloudflare Email Sending only ([74d9c47](https://github.com/FerdiKT/postflare/commit/74d9c4702f3c4a0ab4a0937901d11c7f344c6fd3))
+* **campaigns:** App Store campaign links with click and install/revenue attribution ([88b51ba](https://github.com/FerdiKT/postflare/commit/88b51ba051e28e2656ce8c121f54a87b70650347))
+* **campaigns:** web app for App Store campaign links and results ([39c69ba](https://github.com/FerdiKT/postflare/commit/39c69baec3c933dadf237fb6a55e8ea10c166041))
+* **cli:** apps, links, --app and installs/revenue in analytics ([e4148ad](https://github.com/FerdiKT/postflare/commit/e4148adc1bace2249111697abf8dfc10c903294a))
+* **web:** group accounts by platform or custom group, bulk move, group filters ([d669fde](https://github.com/FerdiKT/postflare/commit/d669fdee64b4e23bf840e636552a3dd6cfa795c4))
+
+
+### Bug Fixes
+
+* **campaigns:** don't insert tracked links into YouTube Shorts (their links aren't clickable) ([dcac295](https://github.com/FerdiKT/postflare/commit/dcac29546437cce5e509975c36f3b56db0cdb038))
+* **youtube:** neutral message for 403 forbidden (it isn't always about comments) ([b3c78b1](https://github.com/FerdiKT/postflare/commit/b3c78b19be2b15b7729138866802bd7bc3aa1b57))
+
+
+### Documentation
+
+* account groups (API, permissions, README, CLI, skill) ([13a4e4c](https://github.com/FerdiKT/postflare/commit/13a4e4ccaa15066188f1ce47cccac7bdeecf581c))
+* App Store campaign links (README section, docs/api.md) ([7ce5dd4](https://github.com/FerdiKT/postflare/commit/7ce5dd4a3d0a509602c29676ba312b1361492422))
+* **youtube:** setup notes list the full scope URLs Google's consent screen expects ([88010af](https://github.com/FerdiKT/postflare/commit/88010af68fb0904868791c6c15a780c4f0c1f25c))
+
 ## [0.2.0](https://github.com/FerdiKT/postflare/compare/v0.1.0...v0.2.0) (2026-10-17)
 
 
