@@ -12,6 +12,19 @@ file is maintained by release-please from Conventional Commits touching `cli/`.
   `post --playbook <id>@<version> --variant A`, `posts edit --playbook/--no-playbook/--variant`, `posts --playbook`.
   The bundled skill tells agents to look up a playbook before writing and to attribute posts.
 
+## [0.4.0](https://github.com/FerdiKT/postflare/compare/cli-v0.3.0...cli-v0.4.0) (2026-10-17)
+
+
+### Features
+
+* **cli:** account groups (groups, accounts group, --group, group:&lt;name&gt; selector) ([df6b0bb](https://github.com/FerdiKT/postflare/commit/df6b0bb932f9546217328c9a902a564b8b4bf660))
+* **cli:** apps, links, --app and installs/revenue in analytics ([e4148ad](https://github.com/FerdiKT/postflare/commit/e4148adc1bace2249111697abf8dfc10c903294a))
+
+
+### Documentation
+
+* account groups (API, permissions, README, CLI, skill) ([13a4e4c](https://github.com/FerdiKT/postflare/commit/13a4e4ccaa15066188f1ce47cccac7bdeecf581c))
+
 ## [0.3.0](https://github.com/FerdiKT/postflare/compare/cli-v0.2.0...cli-v0.3.0) (2026-10-17)
 
 
