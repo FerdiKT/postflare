@@ -248,8 +248,9 @@ extension APIClient {
     func accountGroups() async throws -> [AccountGroup] { try await get("/account-groups") }
     func providers() async throws -> [ProviderInfo] { try await get("/providers") }
 
-    func options(accountId: String, key: String) async throws -> [FieldOption] {
-        try await get("/accounts/\(accountId)/options/\(key)")
+    func options(accountId: String, key: String, settings: [String: JSONValue]? = nil) async throws -> [FieldOption] {
+        let json = settings.flatMap { try? JSONEncoder().encode($0) }.flatMap { String(data: $0, encoding: .utf8) }
+        return try await get("/accounts/\(accountId)/options/\(key)", query: ["settings": json])
     }
 
     // Media

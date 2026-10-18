@@ -57,6 +57,13 @@ enum Fmt {
         date(ms: ms).formatted(.relative(presentation: .named, unitsStyle: .abbreviated))
     }
 
+    /// Video length: "0:42", "12:05", "1:02:33".
+    static func duration(_ seconds: Double) -> String {
+        let t = Int(seconds.rounded())
+        let h = t / 3600, m = (t % 3600) / 60, s = t % 60
+        return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
+    }
+
     static func bytes(_ n: Double) -> String {
         Int64(n).formatted(.byteCount(style: .file))
     }

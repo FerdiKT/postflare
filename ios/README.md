@@ -5,8 +5,11 @@ It talks to the REST API with a device token ([`docs/ios-api.md`](../docs/ios-ap
 `Postflare/Core/Models.swift` mirror [`shared/types.ts`](../shared/types.ts).
 
 What it does: home (today / this week by status, up next, what needs attention, plan banner), posts (list grouped by
-day and a month calendar, filters by status, account group and account), post detail (content, media, the accounts of
-the group, metrics, settings, publishing log; retry, cancel, change schedule, resolve a check, duplicate, delete),
+day and a month calendar, filters by status, account group and account), post detail (a native-looking preview per platform
+— YouTube, TikTok / Reels, Instagram feed and stories, X-style threads, LinkedIn / Facebook, Pinterest, Reddit, blogs —
+switchable between the accounts of the group, collapsible long text, a fullscreen media viewer with zoom and video
+playback, then metrics, settings with their labels, ids and the publishing log; retry, cancel, change schedule, resolve
+a check, duplicate, delete),
 composer (accounts by group, per-platform character counters, photos and videos with upload progress, now / later /
 draft, required platform settings), accounts, analytics, notifications, signing a computer in, and two widgets.
 

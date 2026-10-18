@@ -155,6 +155,8 @@ struct AccountAvatar: View {
     var account: Account?
     var provider: String
     var size: CGFloat = 36
+    /// The platform glyph in the corner.
+    var badge = true
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -169,9 +171,11 @@ struct AccountAvatar: View {
             }
             .frame(width: size, height: size)
             .clipShape(Circle())
-            PlatformGlyph(provider: provider, size: size * 0.48)
-                .overlay { Circle().strokeBorder(Color(.systemBackground), lineWidth: 1.5) }
-                .offset(x: size * 0.08, y: size * 0.08)
+            if badge {
+                PlatformGlyph(provider: provider, size: size * 0.48)
+                    .overlay { Circle().strokeBorder(Color(.systemBackground), lineWidth: 1.5) }
+                    .offset(x: size * 0.08, y: size * 0.08)
+            }
         }
         .accessibilityHidden(true)
     }
@@ -248,37 +252,41 @@ struct PostRow: View {
 
 // MARK: - Media
 
-/// Square thumbnail of a media id (image, or the first frame of a video).
+/// Square thumbnail of a media id (image, or the first frame of a video with a play badge and its duration).
 struct MediaThumb: View {
     @Environment(AppModel.self) private var model
     var mediaId: String
     var size: CGFloat? = nil
 
     var body: some View {
-        let media = model.media[mediaId]
         Rectangle()
             .fill(Color(.tertiarySystemFill))
             .aspectRatio(1, contentMode: .fit)
             .frame(width: size, height: size)
-            .overlay { content(media) }
+            .overlay { MediaContent(mediaId: mediaId) }
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .accessibilityLabel(Text(media?.alt ?? (media?.isVideo == true ? String(localized: "Video") : String(localized: "Image"))))
-            .onAppear { model.loadMedia([mediaId]) }
     }
+}
 
-    @ViewBuilder
-    private func content(_ media: Media?) -> some View {
+/// A media id filling its frame (scaled to fill): image, or a video's first frame with a play badge and duration.
+struct MediaContent: View {
+    @Environment(AppModel.self) private var model
+    var mediaId: String
+    var badge = true
+    var contentMode: ContentMode = .fill
+
+    var body: some View {
+        let media = model.media[mediaId]
         ZStack {
+            Color(.tertiarySystemFill)
             if let media, let url = URL(string: media.url) {
                 if media.isVideo {
-                    VideoFrame(url: url)
-                    Image(systemName: "play.circle.fill")
-                        .font(.title2)
-                        .symbolRenderingMode(.palette)
-                        .foregroundStyle(.white, .black.opacity(0.35))
+                    VideoFrame(url: url, contentMode: contentMode)
                 } else {
                     AsyncImage(url: url) { phase in
-                        if let image = phase.image { image.resizable().scaledToFill() } else if phase.error != nil {
+                        if let image = phase.image {
+                            image.resizable().aspectRatio(contentMode: contentMode)
+                        } else if phase.error != nil {
                             Image(systemName: "photo").foregroundStyle(.secondary)
                         } else {
                             ProgressView()
@@ -289,25 +297,52 @@ struct MediaThumb: View {
                 Image(systemName: "photo").foregroundStyle(.secondary)
             }
         }
+        .overlay {
+            if badge, media?.isVideo == true {
+                Image(systemName: "play.fill")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 40, height: 40)
+                    .background(.black.opacity(0.4), in: Circle())
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if badge, let d = media?.duration, media?.isVideo == true, d > 0 {
+                Text(Fmt.duration(d))
+                    .font(.caption2.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    .padding(6)
+            }
+        }
+        .clipped()
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(media?.alt ?? (media?.isVideo == true ? String(localized: "Video") : String(localized: "Image"))))
+        .onAppear { model.loadMedia([mediaId]) }
     }
 }
 
 /// First frame of a remote video (AVAssetImageGenerator), cached per URL.
 struct VideoFrame: View {
     var url: URL
+    var contentMode: ContentMode = .fill
     @State private var image: UIImage?
 
     private static let cache = NSCache<NSURL, UIImage>()
 
     var body: some View {
         Group {
-            if let image { Image(uiImage: image).resizable().scaledToFill() } else { Color.black.opacity(0.75) }
+            if let image { Image(uiImage: image).resizable().aspectRatio(contentMode: contentMode) } else { Color.black.opacity(0.75) }
         }
         .task(id: url) {
             if let cached = Self.cache.object(forKey: url as NSURL) { image = cached; return }
             let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
             generator.appliesPreferredTrackTransform = true
-            generator.maximumSize = CGSize(width: 400, height: 400)
+            generator.maximumSize = CGSize(width: 800, height: 800)
             if let (cg, _) = try? await generator.image(at: CMTime(seconds: 0.1, preferredTimescale: 600)) {
                 let ui = UIImage(cgImage: cg)
                 Self.cache.setObject(ui, forKey: url as NSURL)
