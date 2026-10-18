@@ -179,7 +179,7 @@ export interface Provider extends Omit<ProviderInfo, "auth" | "analytics" | "sta
   /** Defaults to "beta" (see ProviderStatus). */
   status?: ProviderInfo["status"];
   /**
-   * Published posts keep linking to our `/m/` media URLs (images in markdown/HTML, embeds, URLs in the payload)
+   * Published posts keep linking to our media URLs (`/m/` or the MEDIA_PUBLIC_URL domain; images in markdown/HTML, embeds, URLs in the payload)
    * instead of the platform storing its own copy. Media of such posts is never removed by the retention sweep
    * (lib/media-lifecycle.ts).
    */

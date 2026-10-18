@@ -34,7 +34,7 @@ function MediaGrid({ items, vertical }: { items: Array<MediaDTO | undefined>; ve
   if (vertical)
     return (
       <div className="mx-auto mt-3 aspect-[9/16] w-48 overflow-hidden rounded-xl bg-black">
-        <MediaThumb media={items[0]} className="size-full" controls />
+        <MediaThumb media={items[0]} className="size-full" controls full />
       </div>
     );
   const shown = items.slice(0, 4);
@@ -42,7 +42,7 @@ function MediaGrid({ items, vertical }: { items: Array<MediaDTO | undefined>; ve
     <div className={cn("mt-3 grid gap-0.5 overflow-hidden rounded-xl ring-1 ring-zinc-200 dark:ring-zinc-700", shown.length > 1 && "grid-cols-2")}>
       {shown.map((m, i) => (
         <div key={i} className={cn("relative", shown.length === 1 ? "aspect-video" : "aspect-square", shown.length === 3 && i === 0 && "row-span-2 aspect-auto")}>
-          <MediaThumb media={m} className="absolute inset-0 size-full" controls={m?.kind === "video" && shown.length === 1} />
+          <MediaThumb media={m} className="absolute inset-0 size-full" controls={m?.kind === "video" && shown.length === 1} full={shown.length === 1} />
           {i === 3 && items.length > 4 && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-lg font-semibold text-white">+{items.length - 4}</div>
           )}

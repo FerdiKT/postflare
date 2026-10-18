@@ -187,12 +187,13 @@ export function metricsEventStatement(db: D1Database, e: MetricsEvent): D1Prepar
 /** A media upload or a manual delete (one file). */
 export function mediaEventStatement(
   db: D1Database,
-  e: { workspaceId: string; kind: "media_upload" | "media_delete"; bytes: number; mime?: string; t: number },
+  /** imagesTx: Images transformations spent (1 for an upload whose thumbnail was made). */
+  e: { workspaceId: string; kind: "media_upload" | "media_delete"; bytes: number; mime?: string; t: number; imagesTx?: number },
 ): D1PreparedStatement {
   const type = e.mime ? (e.mime.startsWith("video/") ? "video" : "image") : null;
   return db
-    .prepare(`INSERT INTO usage_events (${COLUMNS}) VALUES (?, NULL, NULL, NULL, NULL, ?, 'ok', ?, 0, 1, ?, 1, NULL, NULL, 0, 0, NULL, ?, ?)`)
-    .bind(e.workspaceId, e.kind, type, e.bytes, e.t, utcDay(e.t));
+    .prepare(`INSERT INTO usage_events (${COLUMNS}) VALUES (?, NULL, NULL, NULL, NULL, ?, 'ok', ?, 0, 1, ?, 1, NULL, NULL, ?, 0, NULL, ?, ?)`)
+    .bind(e.workspaceId, e.kind, type, e.bytes, e.imagesTx ?? 0, e.t, utcDay(e.t));
 }
 
 /**

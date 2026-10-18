@@ -155,7 +155,11 @@ variant, appId, autoLink }`. `status`: `draft | scheduled | publishing | publish
 
 ## Media
 
-`MediaDTO`: `{ id, filename, mime, size, kind (image | video), width, height, duration, alt, url, createdAt }`.
+`MediaDTO`: `{ id, filename, mime, size, kind (image | video), width, height, duration, alt, url, thumbUrl, createdAt }`.
+`url` and `thumbUrl` need no auth header: the signed `/m/` links, or the instance's R2 media domain
+(`MEDIA_PUBLIC_URL`, cacheable, Range requests for streaming) when set ([api.md](api.md#media-urls-and-thumbnails)).
+Use `thumbUrl` (WebP, max 480 px; `null` for videos and older images: fall back to `url`) for grids and thumbnails, and
+`url` for the viewer, hero images and `AVPlayer`. Cache both on disk (the URLs of a media id never change).
 Images: jpeg, png, gif, webp, heic/heif, avif; videos: mp4, quicktime, webm, x-m4v, mpeg; at most 5 GB.
 
 - **Up to 90 MB:** `POST /media` with the raw bytes as body, `Content-Type: <mime>`, `X-Filename: <url-encoded name>`,

@@ -256,6 +256,8 @@ export interface MediaDTO {
   duration: number | null;
   alt: string | null;
   url: string;
+  /** Small WebP thumbnail (images, max 480 px) or null: show `url` instead. */
+  thumbUrl: string | null;
   createdAt: number;
 }
 

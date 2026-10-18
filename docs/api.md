@@ -7,7 +7,7 @@ session, plus `X-Workspace-Id`), or `Authorization: Bearer pf_...` (an API key b
 Profile). Every endpoint is workspace-scoped: ids of other workspaces answer 404. Permissions are listed per endpoint
 (catalog: [workspaces-spec.md](workspaces-spec.md)).
 
-This file documents the account group, App Store campaign, hosted mode (plans, billing, sign-up), bot protection and iOS app endpoints in detail
+This file documents the account group, App Store campaign, hosted mode (plans, billing, sign-up), bot protection, iOS app and media URL endpoints in detail
 and lists the changes they brought to existing endpoints. The rest of the API (accounts, media, posts, analytics, playbooks, users, workspaces) is summarized in the
 README ("API & MCP", "Analytics", "Playbooks") and typed in `shared/types.ts`.
 
@@ -306,3 +306,21 @@ A device token cannot create API keys (`POST /keys`) or pairing codes: credentia
   (posts by status in each period) and `failures` (latest 5 failed / needs_check). Its reads are one D1 batch.
 - `POST /me/password` with a device token keeps that device signed in (other sessions and devices end).
 - `POST /me/workspace` works with device tokens too.
+
+## Media URLs and thumbnails
+
+`MediaDTO` (`GET /media`, uploads, upload links, MCP `list_media`) has `url` and `thumbUrl`, both public (no auth):
+
+- `url`: the signed `/m/:id/:sig/:name` link of the instance, or, when the instance sets `MEDIA_PUBLIC_URL` (README
+  "Custom media domain"), `<MEDIA_PUBLIC_URL>/<media id>/<file name>` served straight from the R2 bucket's custom
+  domain (Range requests supported, no Worker request). Providers hand the same URL to platforms that pull media.
+  Unfinished multipart uploads always get the `/m/` link (404 until completed). `/m/` links stay valid after a media
+  domain is set (URLs already handed out keep resolving).
+- `thumbUrl` (new, nullable): a WebP thumbnail of images, max 480 px (scale-down), made once when the upload completes
+  (single, multipart, from URL, upload links) with the Images binding and stored at `<media id>/thumb/480.webp`:
+  `/m/:id/:sig/thumb/480.webp` (same signature as the file) or `<MEDIA_PUBLIC_URL>/<media id>/thumb/480.webp`. `null` for
+  videos, small images (≤ 480 px and ≤ 256 KB, when the upload sent `X-Width`/`X-Height`), images uploaded before
+  thumbnails, and when the Images binding is missing or the transform failed: show `url` then. Deleted with the media.
+
+Deleting media removes the R2 objects at once; with a Cache Rule on the media domain the edge and browsers may still
+serve them for up to the cache TTL (1 day in the README example).

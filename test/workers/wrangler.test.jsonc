@@ -21,7 +21,8 @@
     { "binding": "TURNSTILE_DB", "database_name": "postflare-turnstile", "database_id": "turnstile" },
     { "binding": "DEVICES_DB", "database_name": "postflare-devices", "database_id": "devices" },
     { "binding": "PUSH_DB", "database_name": "postflare-push", "database_id": "push" },
-    { "binding": "APP_LOGIN_DB", "database_name": "postflare-app-login", "database_id": "app-login" }
+    { "binding": "APP_LOGIN_DB", "database_name": "postflare-app-login", "database_id": "app-login" },
+    { "binding": "MEDIA_CDN_DB", "database_name": "postflare-media-cdn", "database_id": "media-cdn" }
   ],
   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "postflare-media" }],
   "workflows": [{ "name": "postflare-publish", "binding": "PUBLISH_WORKFLOW", "class_name": "PublishWorkflow" }]

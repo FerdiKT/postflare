@@ -303,7 +303,7 @@ export const tiktok: Provider = {
     "",
     "Analytics: accounts connected before `video.list` / `user.info.stats` were added must be **reconnected**. Post metrics need the public post id, which TikTok only returns for public posts after moderation: private (\"Only me\") posts, inbox drafts and posts of sandbox/unaudited apps have no metrics.",
     "",
-    "Videos are uploaded as files (no domain verification needed). **Photo posts** are pulled by TikTok from this server's media URLs, so the domain of `{{baseUrl}}` must be added and verified as a **URL property** of the app (Content Posting API > Verify domains).",
+    "Videos are uploaded as files (no domain verification needed). **Photo posts** are pulled by TikTok from this server's media URLs, so the domain of `{{baseUrl}}` must be added and verified as a **URL property** of the app (Content Posting API > Verify domains). With a custom media domain (`MEDIA_PUBLIC_URL`), verify that domain instead (or both).",
   ].join("\n"),
   appFields: [
     ...tiktokAppFields,

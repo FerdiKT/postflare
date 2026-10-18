@@ -34,5 +34,7 @@ declare namespace Cloudflare {
     PUSH_DB: D1Database;
     /** Own instance for signing in on the web with the app (QR and push with number matching). */
     APP_LOGIN_DB: D1Database;
+    /** Own instance for MEDIA_PUBLIC_URL (CDN media URLs) and image thumbnails (fake Images binding). */
+    MEDIA_CDN_DB: D1Database;
   }
 }

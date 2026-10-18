@@ -197,6 +197,40 @@ token refreshes, analytics) and daily at 03:00 UTC (cleanups, media retention, u
 (requests, D1, R2, Workflows) are plenty for a personal scheduler; R2 storage (10 GB) is the first one media-heavy use
 reaches, hence the media retention.
 
+### Custom media domain (optional, recommended)
+
+By default every media view (the app, the iOS app, and platforms that pull files by URL: Instagram, Threads, Facebook,
+Pinterest, TikTok photos...) goes through the Worker's signed `/m/` links: one Worker request, one D1 read and one R2
+read each. Serve media straight from R2 instead:
+
+1. Cloudflare dashboard → **R2** → bucket `postflare-media` → **Settings** → **Custom Domains** → *Connect domain*, e.g.
+   `cdn.social.example.com` (the zone must be on your account). Objects are then public at
+   `https://cdn.social.example.com/<key>` (keys are `<media id>/<file name>`; media ids are 96 random bits, so URLs
+   cannot be guessed; the bucket root is not listable).
+2. Optional but useful: a **Cache Rule** for that hostname (*Caching* → *Cache Rules*: hostname equals
+   `cdn.social.example.com` → eligible for cache, edge TTL and browser TTL e.g. 1 day). Repeat views are then served from
+   Cloudflare's cache and the browser/app cache without even an R2 read.
+3. Set `"MEDIA_PUBLIC_URL": "https://cdn.social.example.com"` (no trailing slash) in `wrangler.local.jsonc` → `vars`
+   and deploy.
+
+From then on the API, the app, MCP, the CLI and the providers hand out `https://cdn.../<key>` URLs (`url` and `thumbUrl`
+of media). Range requests work (videos stream and seek). Free plan: views no longer count against the Worker's 100,000
+requests/day nor D1 reads; R2 reads are free up to 10 million/month and cached views cost none. Old `/m/` links (already
+given to platforms or in published posts) keep working, and unfinished uploads only ever get `/m/` links. Keep the
+domain once set: CDN URLs given to platforms (and to platforms that keep linking to our copy) depend on it. TikTok pulls
+photos by URL from verified domains only: verify the media domain in your TikTok app too.
+
+Deleting media removes the file (and its thumbnail) from R2 right away, but with a Cache Rule the edge and browsers may
+keep serving a copy for up to its TTL (1 day above). Purge the URL in the dashboard (*Caching* → *Purge*) if a file must
+disappear at once.
+
+**Image thumbnails.** Each image upload (single, multipart, from a URL, upload links) gets one small WebP thumbnail
+(max 480 px) made with the Images binding and stored next to the file (`<media id>/thumb/480.webp`); the media grid,
+composer and apps load it instead of the full image. One Images transformation per image upload: the Images Free plan
+includes 5,000 unique transformations a month (shared with providers that resize images). Without the binding, or when a
+transform fails, the upload works as before (`thumbUrl: null`, clients show the file itself). Images uploaded before
+this have no thumbnail.
+
 ## Updating
 
 Updating Postflare means deploying the new code: **database migrations are applied automatically** on the first

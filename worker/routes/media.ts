@@ -3,7 +3,7 @@ import type { MediaUsageDTO } from "../../shared/types";
 import { enforce } from "../billing/entitlements";
 import { forbidInDemoWorkspace, isInstanceAdmin, requirePermission, wsId, type AppEnv } from "../lib/auth";
 import { verifySignature } from "../lib/crypto";
-import { mediaDto, safeFilename, type MediaRow } from "../lib/media";
+import { makeThumbnail, mediaDto, mediaKeys, safeFilename, thumbKey, type MediaRow } from "../lib/media";
 import { mediaUsage, postsBlockingMediaDelete } from "../lib/media-lifecycle";
 import { baseUrl, mediaRetentionDays } from "../lib/settings";
 import { mediaEventStatement, utcDay } from "../lib/usage";
@@ -60,31 +60,46 @@ export async function insertMedia(
   source: "upload_link" | null = null,
 ) {
   const db = env.DB;
+  // A finished upload (already in R2) gets its image thumbnail first, so the row is written once.
+  const thumb = status === "ready" && (await makeThumbnail(env, { id, key, mime: m.mime, size: m.size, width: m.width, height: m.height }));
   const t = now();
   const insert = db
     .prepare(
-      `INSERT INTO media (id, r2_key, filename, mime, size, kind, width, height, duration, alt, status, upload_id, created_at, workspace_id, created_by, source)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO media (id, r2_key, filename, mime, size, kind, width, height, duration, alt, status, upload_id, created_at, workspace_id, created_by, source, has_thumb)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .bind(id, key, m.filename, m.mime, m.size, kindOf(m.mime), m.width ?? null, m.height ?? null, m.duration ?? null, m.alt ?? null, status, uploadId, t, owner.workspaceId, owner.userId, source);
+    .bind(id, key, m.filename, m.mime, m.size, kindOf(m.mime), m.width ?? null, m.height ?? null, m.duration ?? null, m.alt ?? null, status, uploadId, t, owner.workspaceId, owner.userId, source, thumb ? 1 : 0);
   if (status !== "ready") return void (await insert.run());
-  // A finished upload: its usage event joins the same batch (multipart uploads record theirs on completion).
-  await db.batch([insert, mediaEventStatement(db, { workspaceId: owner.workspaceId, kind: "media_upload", bytes: m.size, mime: m.mime, t })]);
+  // Its usage event joins the same batch (multipart uploads record theirs on completion).
+  await db.batch([insert, mediaEventStatement(db, { workspaceId: owner.workspaceId, kind: "media_upload", bytes: m.size, mime: m.mime, t, imagesTx: thumb ? 1 : 0 })]);
 }
 
-/** Mark a multipart upload complete (stored size from R2) and record its usage event, in one batch. */
-export async function completeMultipartRow(env: Env, workspaceId: string, id: string, size: number) {
+/**
+ * Finish a multipart upload of the workspace: complete it in R2, make its image thumbnail, mark the row ready (stored
+ * size from R2) and record its usage event (one batch). False when there is no such unfinished upload.
+ */
+export async function completeMultipart(env: Env, workspaceId: string, id: string, parts: R2UploadedPart[]): Promise<boolean> {
   const db = env.DB;
+  const row = await db
+    .prepare("SELECT r2_key, upload_id, mime, width, height FROM media WHERE id = ? AND workspace_id = ? AND status = 'uploading'")
+    .bind(id, workspaceId)
+    .first<{ r2_key: string; upload_id: string; mime: string; width: number | null; height: number | null }>();
+  if (!row) return false;
+  const obj = await env.MEDIA.resumeMultipartUpload(row.r2_key, row.upload_id).complete([...parts].sort((a, b) => a.partNumber - b.partNumber));
+  const thumb = await makeThumbnail(env, { id, key: row.r2_key, mime: row.mime, size: obj.size, width: row.width, height: row.height });
   const t = now();
   await db.batch([
-    db.prepare("UPDATE media SET status = 'ready', upload_id = NULL, size = ? WHERE id = ? AND workspace_id = ?").bind(size, id, workspaceId),
+    db
+      .prepare("UPDATE media SET status = 'ready', upload_id = NULL, size = ?, has_thumb = ? WHERE id = ? AND workspace_id = ?")
+      .bind(obj.size, thumb ? 1 : 0, id, workspaceId),
     db
       .prepare(
         `INSERT INTO usage_events (workspace_id, kind, outcome, post_type, has_url, media_count, media_bytes, quantity, images_tx, is_demo, created_at, day)
-         SELECT workspace_id, 'media_upload', 'ok', kind, 0, 1, size, 1, 0, 0, ?, ? FROM media WHERE id = ? AND workspace_id = ?`,
+         SELECT workspace_id, 'media_upload', 'ok', kind, 0, 1, size, 1, ?, 0, ?, ? FROM media WHERE id = ? AND workspace_id = ?`,
       )
-      .bind(t, utcDay(t), id, workspaceId),
+      .bind(thumb ? 1 : 0, t, utcDay(t), id, workspaceId),
   ]);
+  return true;
 }
 
 /** DTO of a media item of the workspace, or null when it is not there. */
@@ -213,11 +228,8 @@ mediaRoutes.put("/media/multipart/:id/:part", requirePermission("media.write"), 
 
 mediaRoutes.post("/media/multipart/:id/complete", requirePermission("media.write"), noDemo, async (c) => {
   const id = c.req.param("id");
-  const upload = await multipart(c.env, wsId(c), id);
-  if (!upload) return c.json({ error: "Upload not found" }, 404);
   const { parts } = await c.req.json<{ parts: R2UploadedPart[] }>();
-  const obj = await upload.complete(parts.sort((a, b) => a.partNumber - b.partNumber));
-  await completeMultipartRow(c.env, wsId(c), id, obj.size);
+  if (!(await completeMultipart(c.env, wsId(c), id, parts))) return c.json({ error: "Upload not found" }, 404);
   return c.json(await dto(c, wsId(c), id));
 });
 
@@ -229,9 +241,9 @@ mediaRoutes.patch("/media/:id", requirePermission("media.write"), noDemo, async 
 });
 
 mediaRoutes.delete("/media/:id", requirePermission("media.write"), noDemo, async (c) => {
-  const row = await c.env.DB.prepare("SELECT r2_key, upload_id, status, size, mime FROM media WHERE id = ? AND workspace_id = ?")
+  const row = await c.env.DB.prepare("SELECT id, r2_key, upload_id, status, size, mime, has_thumb FROM media WHERE id = ? AND workspace_id = ?")
     .bind(c.req.param("id"), wsId(c))
-    .first<{ r2_key: string; upload_id: string | null; status: string; size: number; mime: string }>();
+    .first<{ id: string; r2_key: string; upload_id: string | null; status: string; size: number; mime: string; has_thumb: number }>();
   if (!row) return c.json({ error: "Not found" }, 404);
   // Deleting it would make these posts fail when they publish.
   const postIds = await postsBlockingMediaDelete(c.env.DB, wsId(c), c.req.param("id"));
@@ -244,7 +256,8 @@ mediaRoutes.delete("/media/:id", requirePermission("media.write"), noDemo, async
   if (row.status === "uploading" && row.upload_id) {
     await c.env.MEDIA.resumeMultipartUpload(row.r2_key, row.upload_id).abort().catch(() => {});
   } else {
-    await c.env.MEDIA.delete(row.r2_key);
+    // With MEDIA_PUBLIC_URL, edge and browser caches may still serve the deleted file for up to their TTL (README).
+    await c.env.MEDIA.delete(mediaKeys([row]));
   }
   const db = c.env.DB;
   const del = db.prepare("DELETE FROM media WHERE id = ? AND workspace_id = ?").bind(c.req.param("id"), wsId(c));
@@ -294,8 +307,26 @@ export function num(v: string | undefined): number | null {
   return v && Number.isFinite(n) ? n : null;
 }
 
-/** Public media: /m/:id/:signature/:filename — platforms download attachments from here. */
+/**
+ * Public media: /m/:id/:signature/:filename — platforms download attachments from here. With MEDIA_PUBLIC_URL set, new
+ * URLs point at the R2 custom domain instead, but these links stay valid (URLs already handed out, posts, self-hosters
+ * without a zone).
+ */
 export const publicMedia = new Hono<AppEnv>();
+
+/** Image thumbnail: /m/:id/:signature/thumb/480.webp (same signature). No D1 read: thumbnails exist only for finished uploads and are deleted with them. */
+publicMedia.on(["GET", "HEAD"], "/:id/:sig/thumb/:name", async (c) => {
+  const id = c.req.param("id");
+  if (!(await verifySignature(c.env, `media:${id}`, c.req.param("sig")))) return c.text("Not found", 404);
+  const head = c.req.method === "HEAD";
+  const obj: R2Object | R2ObjectBody | null = head ? await c.env.MEDIA.head(thumbKey(id)) : await c.env.MEDIA.get(thumbKey(id), { onlyIf: c.req.raw.headers });
+  if (!obj) return c.text("Not found", 404);
+  const headers = new Headers({ "content-type": "image/webp", "cache-control": "public, max-age=31536000, immutable", etag: obj.httpEtag });
+  if (!head && !("body" in obj)) return new Response(null, { status: 304, headers });
+  headers.set("content-length", String(obj.size));
+  if (head) return new Response(null, { headers });
+  return new Response((obj as R2ObjectBody).body, { headers });
+});
 
 publicMedia.on(["GET", "HEAD"], "/:id/:sig/:name?", async (c) => {
   const id = c.req.param("id");

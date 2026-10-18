@@ -21,6 +21,9 @@
   "vars": {
     // Public URL used for OAuth redirects, media links and the CLI hints. Locks the Settings field when set.
     "PUBLIC_URL": "https://social.example.com",
+    // Public custom domain of the R2 media bucket (README "Custom media domain": bucket → Settings → Custom Domains,
+    // plus a Cache Rule). Media URLs then point straight at R2, not at the Worker's /m/ links. No trailing slash.
+    // "MEDIA_PUBLIC_URL": "https://cdn.social.example.com",
     // "true" hosts the public, sandboxed live demo at /demo. Leave it out unless you really want a public demo.
     "DEMO_MODE": "false"
     // Sign-in links by email: the sender ("Name <address>" or a bare address), plus the "send_email" binding below.

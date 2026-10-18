@@ -10,6 +10,7 @@
 // statement, so media attached to a post meanwhile is kept.
 
 import { providers } from "../providers/registry";
+import { mediaKeys } from "./media";
 import { mediaRetentionDays } from "./settings";
 import { mediaSweepEventStatement } from "./usage";
 import { now } from "./util";
@@ -107,14 +108,15 @@ async function deleteWhere(env: Env, where: string, binds: unknown[], limit: num
   // One batch (one transaction): the usage events of the files about to go (per workspace), then the DELETE. Both
   // evaluate the same rule on the same snapshot. The rule is evaluated by the DELETE itself: a file attached to a post
   // since the run started is kept.
-  const [, deleted] = await db.batch<{ r2_key: string }>([
+  const [, deleted] = await db.batch<{ id: string; r2_key: string; has_thumb: number }>([
     mediaSweepEventStatement(db, ids, [...binds, limit], now()),
-    db.prepare(`DELETE FROM media WHERE id IN (${ids}) RETURNING r2_key`).bind(...binds, limit),
+    db.prepare(`DELETE FROM media WHERE id IN (${ids}) RETURNING id, r2_key, has_thumb`).bind(...binds, limit),
   ]);
   const results = deleted.results;
   if (results.length) {
-    // One R2 call for up to 1000 keys. If it fails the rows are gone and the objects stay (storage, not a broken post).
-    await env.MEDIA.delete(results.map((r) => r.r2_key)).catch((err) => console.error("media sweep: R2 delete failed", err));
+    // One R2 call for up to 1000 keys (file + thumbnail of SWEEP_BATCH rows). If it fails the rows are gone
+    // and the objects stay (storage, not a broken post).
+    await env.MEDIA.delete(mediaKeys(results)).catch((err) => console.error("media sweep: R2 delete failed", err));
   }
   return results.length;
 }

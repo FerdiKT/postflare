@@ -1,5 +1,6 @@
 import type { RoleScope } from "../../shared/types";
 import { trialStatements } from "../billing/entitlements";
+import { mediaKeys } from "./media";
 import { terminateWorkflow } from "./posts";
 import { ROLE, isDemoRole, parsePermissions } from "./permissions";
 import { newId, now } from "./util";
@@ -112,9 +113,9 @@ export async function deleteWorkspace(env: Env, workspaceId: string): Promise<vo
     .bind(workspaceId, MAX_TERMINATE)
     .all<{ workflow_id: string }>();
   const { results: media } = await db
-    .prepare("SELECT r2_key, upload_id, status FROM media WHERE workspace_id = ?")
+    .prepare("SELECT id, r2_key, upload_id, status, has_thumb FROM media WHERE workspace_id = ?")
     .bind(workspaceId)
-    .all<{ r2_key: string; upload_id: string | null; status: string }>();
+    .all<{ id: string; r2_key: string; upload_id: string | null; status: string; has_thumb: number }>();
 
   // Rows first: a workflow that wakes up after this finds no post and skips (publishing ones fail cleanly).
   await db.batch([
@@ -141,7 +142,7 @@ export async function deleteWorkspace(env: Env, workspaceId: string): Promise<vo
   ]);
 
   await Promise.allSettled(scheduled.map((r) => terminateWorkflow(env, r.workflow_id)));
-  const keys = media.filter((m) => m.status === "ready" || !m.upload_id).map((m) => m.r2_key);
+  const keys = mediaKeys(media.filter((m) => m.status === "ready" || !m.upload_id));
   for (let i = 0; i < keys.length; i += 1000) await env.MEDIA.delete(keys.slice(i, i + 1000));
   await Promise.allSettled(
     media

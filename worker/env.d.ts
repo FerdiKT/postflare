@@ -3,6 +3,11 @@ interface Env {
   SECRET_KEY?: string;
   /** Optional public base URL (e.g. https://social.example.com). Defaults to the request origin. */
   PUBLIC_URL?: string;
+  /**
+   * Optional public custom domain of the R2 media bucket (e.g. https://cdn.example.com, no trailing slash). When set,
+   * media URLs (API, app, platforms) point straight at R2 instead of the Worker's signed /m/ links (which keep working).
+   */
+  MEDIA_PUBLIC_URL?: string;
   /** Optional secret: when set, creating the first user (POST /api/auth/setup) requires it (fresh-deploy takeover guard). */
   SETUP_TOKEN?: string;
   /** "true" turns on the public live demo (GET /demo, POST /api/auth/demo, sandboxed demo workspace). Off by default. */

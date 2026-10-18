@@ -4,7 +4,7 @@ import { forbidInDemoWorkspace, requirePermission, wsId, type AppEnv } from "../
 import { mediaDto, safeFilename, type MediaRow } from "../lib/media";
 import { baseUrl } from "../lib/settings";
 import { newId, now, parseJson, randomToken, sha256Hex } from "../lib/util";
-import { PART_SIZE, SINGLE_UPLOAD_MAX, checkMeta, completeMultipartRow, dto, insertMedia, multipart, num, safeDecode, type Meta } from "./media";
+import { PART_SIZE, SINGLE_UPLOAD_MAX, checkMeta, completeMultipart, dto, insertMedia, multipart, num, safeDecode, type Meta } from "./media";
 
 /**
  * Upload links (reusable until they expire, at most MAX_LINK_FILES files). An AI client (claude.ai, mobile apps) cannot pass chat attachments to MCP tools, so it
@@ -176,11 +176,8 @@ uploadLinkPublic.post("/:token/multipart/:id/complete", async (c) => {
   if (!link) return gone(c);
   const id = c.req.param("id");
   if (!owns(link, id)) return c.json({ error: "Upload not found" }, 404);
-  const upload = await multipart(c.env, link.workspace_id, id);
-  if (!upload) return c.json({ error: "Upload not found" }, 404);
   const { parts } = await c.req.json<{ parts: R2UploadedPart[] }>();
-  const obj = await upload.complete(parts.sort((a, b) => a.partNumber - b.partNumber));
-  await completeMultipartRow(c.env, link.workspace_id, id, obj.size);
+  if (!(await completeMultipart(c.env, link.workspace_id, id, parts))) return c.json({ error: "Upload not found" }, 404);
   return c.json(await dto(c, link.workspace_id, id));
 });
 

@@ -200,7 +200,7 @@ export const tiktokBusiness: Provider = {
     "1. Create a developer app on the [TikTok API for Business portal](https://business-api.tiktok.com/portal/apps) with the *TikTok Accounts* (organic) product.",
     "2. Request the scopes `user.info.basic`, `user.info.username`, `user.info.stats`, `video.list`, `video.upload` and `video.publish`.",
     "3. Set the redirect URL to `{{redirectUri}}`.",
-    "4. TikTok pulls every video and photo from this server's media URLs: add the domain of `{{baseUrl}}` as a verified **URL property** of the app.",
+    "4. TikTok pulls every video and photo from this server's media URLs: add the domain of `{{baseUrl}}` as a verified **URL property** of the app (with a custom media domain, `MEDIA_PUBLIC_URL`, that domain instead, or both).",
     "5. Paste the app ID (client key) and secret here.",
     "",
     "Analytics use `video.list` (video views, likes, comments, shares, reach) and `user.info.stats` (followers). Post metrics need the public post id, which TikTok returns only after moderation; drafts have none.",
