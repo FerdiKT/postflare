@@ -1,4 +1,4 @@
-import type { PostDTO, PostLogDTO, PostStatus, ProviderInfo } from "@shared/types";
+import type { AuthStatusDTO, OverviewDTO, PostDTO, PostLogDTO, ProviderInfo } from "@shared/types";
 
 export type * from "@shared/types";
 
@@ -8,24 +8,9 @@ export type * from "@shared/types";
  */
 export type Provider = ProviderInfo & { configured: boolean; redirectUri: string; enabled: boolean; dataDeletionUri?: string };
 
-export interface AuthStatus {
-  setup: boolean;
-  authenticated: boolean;
-  demo?: true;
-  setupToken?: true;
-  magicLink?: true;
-  /** Public sign-up is on: "Create an account" on the sign-in page, /signup. */
-  signup?: true;
-  /** Cloudflare Turnstile is on: the widget's site key (sign-up, sign-in links, sign-in after failures). */
-  turnstileSiteKey?: string;
-}
+export type AuthStatus = AuthStatusDTO;
 
-export interface Overview {
-  counts: Partial<Record<PostStatus, number>>;
-  upcoming: PostDTO[];
-  recent: PostDTO[];
-  accounts: { total: number; reconnect: number };
-}
+export type Overview = OverviewDTO;
 
 export interface PostWithLogs extends PostDTO {
   logs: PostLogDTO[];

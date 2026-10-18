@@ -32,6 +32,11 @@ import type {
   PlaybookStatsSort,
   RevflareTestDTO,
   AnalyticsPostDTO,
+  AppLoginPollDTO,
+  AppLoginStartDTO,
+  DeviceDTO,
+  PairingCodeDTO,
+  PairingStatusDTO,
   AnalyticsRefreshDTO,
   AnalyticsSummaryDTO,
   PostMetricsDTO,
@@ -199,6 +204,20 @@ export const api = {
     verifyMagicLink: (token: string) => request<{ ok: true }>("POST", "/auth/magic-link/verify", { token }),
     signup: (input: SignupInput) => request<SignupDTO>("POST", "/auth/signup", input),
     verifySignup: (token: string) => request<{ ok: true; workspaceId: string }>("POST", "/auth/signup/verify", { token }),
+    /** Sign in with the iOS app (docs/app-login-spec.md): the secret stays in the page and proves this browser. */
+    appLogin: {
+      start: (body: { kind: "qr" } | { kind: "push"; email: string; turnstileToken?: string }) => request<AppLoginStartDTO>("POST", "/auth/app-login", body),
+      poll: (id: string, secret: string) => request<AppLoginPollDTO>("GET", `/auth/app-login/${encodeURIComponent(id)}`, undefined, { headers: { "x-login-secret": secret } }),
+      cancel: (id: string, secret: string) => request<{ ok: true }>("DELETE", `/auth/app-login/${encodeURIComponent(id)}`, undefined, { headers: { "x-login-secret": secret } }),
+    },
+  },
+  /** iOS app installs of the signed-in user (Profile → Postflare for iPhone). */
+  devices: {
+    list: () => get<{ items: DeviceDTO[]; push: boolean }>("/devices"),
+    remove: (id: string) => request<{ ok: true }>("DELETE", `/devices/${encodeURIComponent(id)}`),
+    test: (id: string) => request<{ ok: true }>("POST", `/devices/${encodeURIComponent(id)}/test`, {}),
+    pairingCode: () => request<PairingCodeDTO>("POST", "/pairing-codes", {}),
+    pairingStatus: (id: string) => get<PairingStatusDTO>(`/pairing-codes/${encodeURIComponent(id)}`),
   },
   billing: {
     get: () => get<BillingDTO>("/billing"),

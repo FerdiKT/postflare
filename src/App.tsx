@@ -63,7 +63,17 @@ export function App() {
   }, [check]);
 
   const onLogout = useCallback(
-    () => setStatus((s) => ({ setup: true, authenticated: false, ...(s?.magicLink ? { magicLink: true as const } : {}), ...(s?.signup ? { signup: true as const } : {}) })),
+    () =>
+      setStatus((s) => ({
+        setup: true,
+        authenticated: false,
+        ...(s?.magicLink ? { magicLink: true as const } : {}),
+        ...(s?.signup ? { signup: true as const } : {}),
+        ...(s?.turnstileSiteKey ? { turnstileSiteKey: s.turnstileSiteKey } : {}),
+        ...(s?.appLogin ? { appLogin: true as const } : {}),
+        ...(s?.pushLogin ? { pushLogin: true as const } : {}),
+        ...(s?.appStoreUrl ? { appStoreUrl: s.appStoreUrl } : {}),
+      })),
     [],
   );
 
@@ -98,6 +108,9 @@ export function App() {
                     magicLink={!!status.magicLink}
                     signup={!!status.signup}
                     turnstileSiteKey={status.turnstileSiteKey}
+                    appLogin={!!status.appLogin}
+                    pushLogin={!!status.pushLogin}
+                    appStoreUrl={status.appStoreUrl}
                     onDone={() => {
                       const next = nextPath();
                       if (window.location.pathname === "/login" || window.location.pathname === "/setup" || next !== "/") navigate(next, { replace: true });

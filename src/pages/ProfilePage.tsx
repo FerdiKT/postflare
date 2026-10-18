@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { AlertTriangle, Bot, KeyRound, Lock, Plus, SquareTerminal, Trash2, UserRound } from "lucide-react";
+import { AlertTriangle, BellRing, Bot, CheckCircle2, KeyRound, Lock, Plus, QrCode as QrIcon, RefreshCw, Smartphone, SquareTerminal, Trash2, UserRound } from "lucide-react";
+import { QrCode } from "../components/QrCode";
 import { InitialsAvatar } from "../components/ui/Avatar";
 import { Button, IconButton } from "../components/ui/Button";
 import { useConfirm } from "../components/ui/Confirm";
@@ -9,6 +10,8 @@ import { Badge, CodeBlock, CopyButton, PageHeader, Skeleton, Tabs } from "../com
 import { Notice, Section } from "../components/ui/Section";
 import { useToast } from "../components/ui/Toast";
 import { api } from "../lib/api";
+import { countdown, useNow, useVisiblePoll } from "../lib/poll";
+import type { PairingCodeDTO } from "../lib/types";
 import { useApp } from "../lib/app";
 import { isPlaceholderEmail, useSession } from "../lib/session";
 import { formatDateTime, relativeTime } from "../lib/time";
@@ -24,6 +27,7 @@ export function ProfilePage() {
       <div className="space-y-6">
         <ProfileSection />
         <PasswordSection />
+        <IphoneSection />
         <KeysSection onCreated={setToken} />
         <CliSection />
         <DocsSection token={token} />
@@ -191,6 +195,184 @@ function PasswordSection() {
           Change password
         </Button>
       </form>
+    </Section>
+  );
+}
+
+/** "Postflare for iPhone": pairing QR code (5 minutes, single use) and the signed-in devices with revoke. */
+function IphoneSection() {
+  const toast = useToast();
+  const confirm = useConfirm();
+  const devices = useFetch("devices", api.devices.list, ["devices"]);
+  const status = useFetch("auth-status", api.auth.status);
+  const [code, setCode] = useState<PairingCodeDTO | null>(null);
+  const [paired, setPaired] = useState<string | null | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+  const now = useNow(1000);
+  const expired = !!code && code.expiresAt <= now;
+
+  async function connect() {
+    setBusy(true);
+    setPaired(undefined);
+    try {
+      setCode(await api.devices.pairingCode());
+    } catch (err) {
+      toast.error(err);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Until the app used the code (or it expired): then the device list picks up the new phone.
+  useVisiblePoll(
+    async () => {
+      if (!code) return true;
+      const s = await api.devices.pairingStatus(code.id);
+      if (s.status === "pending") return false;
+      if (s.status === "used") {
+        setPaired(s.deviceName);
+        setCode(null);
+        invalidate("devices");
+      }
+      return true;
+    },
+    2000,
+    !!code && !expired,
+  );
+
+  const list = devices.data?.items ?? [];
+  return (
+    <Section
+      icon={<Smartphone />}
+      title="Postflare for iPhone"
+      description="Sign in on your iPhone without typing a password, get notified when posts are published or fail, and approve sign-ins on the web."
+    >
+      <div className="max-w-xl space-y-5">
+        {paired !== undefined ? (
+          <div className="flex items-start gap-3 rounded-xl bg-emerald-50 p-4 text-sm text-emerald-800 ring-1 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-900">
+            <CheckCircle2 className="mt-0.5 size-5 shrink-0" />
+            <div className="flex-1">
+              <p className="font-medium">{paired ? `${paired} is connected` : "Your iPhone is connected"}</p>
+              <p className="mt-0.5">It stays signed in until you revoke it below.</p>
+            </div>
+            <Button size="sm" variant="ghost" onClick={() => setPaired(undefined)}>
+              Done
+            </Button>
+          </div>
+        ) : !code ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <Button variant="primary" icon={<QrIcon className="size-4" />} onClick={connect} loading={busy}>
+              Connect iPhone
+            </Button>
+            {status.data?.appStoreUrl && (
+              <a className="text-sm font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400" href={status.data.appStoreUrl} target="_blank" rel="noreferrer">
+                Get the app
+              </a>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-start">
+            <div className="relative shrink-0">
+              <QrCode value={code.url} size={192} label="QR code to sign in with the Postflare iOS app" />
+              {expired && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center rounded-xl bg-white/90 text-sm font-medium text-zinc-700 backdrop-blur-sm dark:bg-zinc-900/90 dark:text-zinc-200">
+                  Expired
+                  <Button size="sm" className="mt-2" icon={<RefreshCw className="size-3.5" />} onClick={connect} loading={busy}>
+                    New code
+                  </Button>
+                </div>
+              )}
+            </div>
+            <div className="min-w-0 flex-1 text-center sm:text-left">
+              <ol className="space-y-1 text-sm text-zinc-600 dark:text-zinc-300">
+                <li>1. Open Postflare on your iPhone.</li>
+                <li>2. Tap “Scan QR code”, or point the Camera app at the code.</li>
+                <li>3. Your iPhone signs in as you.</li>
+              </ol>
+              <p className="mt-4 text-xs text-zinc-500">Or type this code in the app</p>
+              <p className="mt-1 select-all font-mono text-2xl font-semibold tracking-[0.2em]" aria-label={`Code ${code.code.split("").join(" ")}`}>
+                {code.code.slice(0, 5)}-{code.code.slice(5)}
+              </p>
+              <p className="mt-2 text-sm tabular-nums text-zinc-500" aria-live="polite">
+                {expired ? "This code has expired." : `Waiting for your iPhone… expires in ${countdown(code.expiresAt - now)}`}
+              </p>
+              <div className="mt-3 flex justify-center gap-2 sm:justify-start">
+                <Button size="sm" icon={<RefreshCw className="size-3.5" />} onClick={connect} loading={busy}>
+                  New code
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setCode(null)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div>
+          <p className="mb-2 text-sm font-medium">Your devices</p>
+          {!devices.data ? (
+            <Skeleton className="h-14 w-full" />
+          ) : !list.length ? (
+            <p className="text-sm text-zinc-500">No iPhone connected yet.</p>
+          ) : (
+            <ul className="divide-y divide-zinc-100 rounded-lg ring-1 ring-zinc-200 dark:divide-zinc-800 dark:ring-zinc-800">
+              {list.map((d) => (
+                <li key={d.id} className="flex items-center gap-3 px-4 py-3">
+                  <Smartphone className="size-4 shrink-0 text-zinc-400" />
+                  <div className="min-w-0 flex-1">
+                    <p className="flex items-center gap-2 truncate text-sm font-medium">
+                      {d.name ?? "iPhone"}
+                      <Badge tone={d.push ? "green" : "zinc"}>{d.push ? "Notifications on" : "Notifications off"}</Badge>
+                    </p>
+                    <p className="text-xs text-zinc-500">
+                      {d.lastSeenAt ? `Last seen ${relativeTime(d.lastSeenAt)}` : "Never used"} · connected {relativeTime(d.createdAt)}
+                    </p>
+                  </div>
+                  {d.push && devices.data?.push && (
+                    <IconButton
+                      label="Send a test notification"
+                      size="sm"
+                      onClick={async () => {
+                        try {
+                          await api.devices.test(d.id);
+                          toast.success("Test notification sent");
+                        } catch (err) {
+                          toast.error(err);
+                        }
+                      }}
+                    >
+                      <BellRing className="size-4" />
+                    </IconButton>
+                  )}
+                  <IconButton
+                    label="Sign out this device"
+                    size="sm"
+                    variant="danger"
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: `Sign out “${d.name ?? "iPhone"}”?`,
+                        message: "The app on this device is signed out at once and stops getting notifications.",
+                        confirmLabel: "Sign out",
+                        danger: true,
+                      });
+                      if (!ok) return;
+                      try {
+                        await api.devices.remove(d.id);
+                        toast.success("Device signed out");
+                        invalidate("devices");
+                      } catch (err) {
+                        toast.error(err);
+                      }
+                    }}
+                  >
+                    <Trash2 className="size-4" />
+                  </IconButton>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
     </Section>
   );
 }
