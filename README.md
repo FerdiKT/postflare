@@ -353,11 +353,12 @@ upsert per click).
 
 ## iOS app
 
-A native **Postflare for iPhone** app is in the works (it is not in the App Store yet). The server side is ready:
-the app signs in with your email and password or by scanning a QR code (Profile → **Postflare for iPhone** →
-"Connect iPhone"), sees every workspace you can see, gets push notifications when posts are published, fail or need a
-check, and can approve sign-ins on the web ("Sign in with the iPhone app" on the sign-in page: QR code, or a push with
-number matching). API reference for the app: [docs/ios-api.md](docs/ios-api.md).
+A native **Postflare for iPhone** app lives in [`ios/`](ios/) (SwiftUI, iOS 26; not in the App Store yet): build it
+with your own bundle id and team, see [ios/README.md](ios/README.md). It signs in with your email and password or by
+scanning a QR code (Profile → **Postflare for iPhone** → "Connect iPhone"), sees every workspace you can see, schedules
+posts with photos and videos, shows the calendar, accounts and analytics, gets push notifications when posts are
+published, fail or need a check, and can approve sign-ins on the web ("Sign in with the iPhone app" on the sign-in
+page: QR code, or a push with number matching). API reference for the app: [docs/ios-api.md](docs/ios-api.md).
 
 ### Push notifications (APNs)
 
