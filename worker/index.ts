@@ -18,6 +18,7 @@ import { accountGroupRoutes } from "./routes/accountGroups";
 import { accountRoutes } from "./routes/accounts";
 import { adminRoutes } from "./routes/admin";
 import { analyticsRoutes } from "./routes/analytics";
+import { appLoginRoutes } from "./routes/appLogin";
 import { authRoutes } from "./routes/auth";
 import { campaignRedirect, campaignRoutes } from "./routes/campaigns";
 import { demoLogin, demoPage } from "./routes/demo";
@@ -40,6 +41,8 @@ export { PublishWorkflow } from "./workflow";
 const api = new Hono<AppEnv>();
 api.use("*", sameOriginMutations);
 api.post("/auth/demo", demoLogin);
+// Sign in on the web with the iOS app: public browser endpoints, app endpoints check the device token themselves.
+api.route("/auth/app-login", appLoginRoutes);
 api.route("/auth", authRoutes);
 api.route("/invitations", invitationPublicRoutes);
 api.route("/version", versionRoute);
