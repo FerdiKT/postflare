@@ -2,11 +2,12 @@
 
 Base: `https://<host>/api`. JSON in and out; errors are `{ "error": "message" }` with a 4xx/5xx status (validation
 errors also carry `errors: string[]`). Types: [`shared/types.ts`](../shared/types.ts). Authentication: the web app's
-session cookie (plus `X-Workspace-Id`), or `Authorization: Bearer pf_...` (an API key bound to one workspace, created in
+session cookie (plus `X-Workspace-Id`), the iOS app's device token `Authorization: Bearer pfd_...` (acts like the
+session, plus `X-Workspace-Id`), or `Authorization: Bearer pf_...` (an API key bound to one workspace, created in
 Profile). Every endpoint is workspace-scoped: ids of other workspaces answer 404. Permissions are listed per endpoint
 (catalog: [workspaces-spec.md](workspaces-spec.md)).
 
-This file documents the account group, App Store campaign, hosted mode (plans, billing, sign-up) and bot protection endpoints in detail
+This file documents the account group, App Store campaign, hosted mode (plans, billing, sign-up), bot protection and iOS app endpoints in detail
 and lists the changes they brought to existing endpoints. The rest of the API (accounts, media, posts, analytics, playbooks, users, workspaces) is summarized in the
 README ("API & MCP", "Analytics", "Playbooks") and typed in `shared/types.ts`.
 
@@ -269,3 +270,39 @@ first-run `POST /auth/setup`.
 - `POST /admin/turnstile/test` `{ secretKey? }` (default: the effective secret) → `{ ok: true, testing? } | { ok: false,
   error }`: siteverify with a dummy token. `invalid-input-response` means the secret is valid, `invalid-input-secret`
   that it is wrong; `testing: true` for a Turnstile test secret (always passes).
+
+## iOS app
+
+Full app-facing reference (request/response shapes, push payloads, loc keys): [ios-api.md](ios-api.md). Web sign-in
+with the app: [app-login-spec.md](app-login-spec.md).
+
+Public (`/auth`, before sign-in):
+- `POST /auth/device` `{ email, password, deviceName, turnstileToken? }` → `DeviceTokenDTO` `{ token: "pfd_…",
+  deviceId, user, instancePermissions, workspaces, currentWorkspaceId, server }`. Same throttle, bot check and refusals
+  (pending, disabled) as `POST /auth/login`.
+- `POST /auth/pair` `{ code, deviceName }` → `DeviceTokenDTO`. Codes are single use, 5 minutes; 10 wrong codes per IP
+  in 15 minutes → 429.
+- `POST /auth/device/logout` (device token) → `{ ok }`: revokes the token and its push registration.
+- Web login requests: `POST /auth/app-login` `{ kind: "qr" } | { kind: "push", email, turnstileToken? }` →
+  `AppLoginStartDTO`; `GET /auth/app-login/:id` (`X-Login-Secret`) → `AppLoginPollDTO` (sets the session cookie once
+  approved); `DELETE /auth/app-login/:id`; app side (device token): `POST /auth/app-login/:id/inspect | approve |
+  deny`. 404 while the instance has neither `APP_STORE_URL` nor a signed-in device; push needs APNs. 10 starts per IP
+  and 3 push starts per email in 10 minutes.
+
+Signed in (no workspace permission needed: devices belong to the user):
+- `POST /pairing-codes` (web session only) → `PairingCodeDTO` `{ id, code, url: "postflare://pair?s=…&c=…",
+  expiresAt }`; `GET /pairing-codes/:id` → `PairingStatusDTO` `{ status: pending | used | expired, deviceName }`.
+- `GET /devices` → `{ items: DeviceDTO[], push }`; `DELETE /devices/:id` (`me` = the calling device) signs it out.
+- Device token only: `PUT /devices/me` `{ apnsToken?, environment?, name?, prefs? }` → `DeviceDTO`;
+  `PATCH /devices/me/prefs` `{ published?, failed?, workspaces? }` → `DeviceDTO`. `POST /devices/:id/test`.
+
+A device token cannot create API keys (`POST /keys`) or pairing codes: credentials that would outlive its revocation.
+
+### Changes to existing endpoints (iOS app)
+
+- `GET /auth/status` adds `appLogin` (the iOS app is available: `APP_STORE_URL` set or a device signed in),
+  `pushLogin` (APNs configured and a device with push on) and `appStoreUrl`.
+- `GET /overview` accepts `todayStart` / `weekStart` (ms) and adds `periods { today, week, todayStart, weekStart }`
+  (posts by status in each period) and `failures` (latest 5 failed / needs_check). Its reads are one D1 batch.
+- `POST /me/password` with a device token keeps that device signed in (other sessions and devices end).
+- `POST /me/workspace` works with device tokens too.

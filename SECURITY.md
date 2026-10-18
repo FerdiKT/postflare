@@ -51,13 +51,31 @@ redeploying from an up-to-date checkout.
 - An API key only acts inside its own workspace, with its user's member role there. It never carries instance-admin
   permissions (users, roles, platform apps, settings), even when its user is an instance admin; those need a browser
   session.
+- iOS app device tokens (`Bearer pfd_...`) act like a web session of their user (every workspace, the same
+  permissions), so treat a signed-in phone like a signed-in browser. Only their SHA-256 is stored; they last a year
+  from the last use and end when the device is signed out (in the app or Profile → Postflare for iPhone), when the
+  user changes the password elsewhere, or is disabled or deleted. They cannot create API keys or pairing codes, and are
+  never accepted as a cookie (nor cookies as device tokens). Pairing codes (QR on the Profile page) are single use,
+  expire after 5 minutes, carry 50 bits of randomness and are throttled (10 wrong codes per IP per 15 minutes).
+- Sign in on the web with the app (docs/app-login-spec.md): a request lives 3 minutes and is used once; the session
+  cookie goes only to the browser holding the request's poll secret, which never leaves that browser (the QR code
+  carries the request id and a nonce, so a photographed code cannot take over the browser's session). Push requests use
+  number matching against approve fatigue: a wrong pick denies the request. Starting a push request answers the same
+  for unknown emails and is throttled (10 requests per IP, 3 pushes per email in 10 minutes, Turnstile when
+  configured). Remaining risk: a phishing page can relay a real, fresh QR code of this instance to a victim
+  (QRLJacking); the app therefore shows the instance host, the requesting browser's IP and approximate location and
+  asks the user to approve only a sign-in they are doing right now. Disabled and demo users can never approve.
+- APNs: the `.p8` key is a secret (`APNS_PRIVATE_KEY`); provider tokens are signed with Web Crypto and cached for 40
+  minutes. Notifications carry the account name, platform and up to 100 characters of the post or its error, so they
+  can show on a locked screen.
 - Upload links and invitation links are bearer credentials until they expire (at most 7 days); public media links
   (`/m/...`) never expire while the media exists, because platforms download from them.
 
 ## Scope
 
 In scope:
-- The Worker and web app in this repository: authentication, sessions, API keys, workspace isolation and permission
+- The Worker and web app in this repository: authentication, sessions, iOS device tokens and web sign-in with the app,
+  API keys, workspace isolation and permission
   checks, OAuth flows, encryption of stored tokens, media and upload links, the MCP server, the live demo sandbox,
   public sign-up, plan limits and billing webhooks.
 - The `postflare` CLI (`cli/`).

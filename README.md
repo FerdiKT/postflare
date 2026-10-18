@@ -351,6 +351,35 @@ small numbers (fewer than 5 users) are withheld, and proceeds are Apple's estima
 and `/oauth/`: link clicks come from many visitors behind shared IPs, and the route is cheap (one D1 read and one
 upsert per click).
 
+## iOS app
+
+A native **Postflare for iPhone** app is in the works (it is not in the App Store yet). The server side is ready:
+the app signs in with your email and password or by scanning a QR code (Profile → **Postflare for iPhone** →
+"Connect iPhone"), sees every workspace you can see, gets push notifications when posts are published, fail or need a
+check, and can approve sign-ins on the web ("Sign in with the iPhone app" on the sign-in page: QR code, or a push with
+number matching). API reference for the app: [docs/ios-api.md](docs/ios-api.md).
+
+### Push notifications (APNs)
+
+Optional; without it the app works but gets no notifications and "Send a request to my iPhone" is hidden.
+
+1. In the Apple Developer account: Certificates, Identifiers & Profiles → Keys → create a key with **Apple Push
+   Notifications service (APNs)**, download the `.p8` file (once) and note its Key ID and your Team ID.
+2. Set the key as a secret and the rest as vars (`wrangler.local.jsonc`, see the example file):
+
+   ```bash
+   npx wrangler secret put APNS_PRIVATE_KEY < AuthKey_ABC123DEFG.p8
+   ```
+
+   `APNS_KEY_ID` (the Key ID), `APNS_TEAM_ID` (Team ID) and `APNS_TOPIC` (the app's bundle id). One key works for
+   both the sandbox (development builds) and production (TestFlight, App Store); each device tells the server which
+   one it uses.
+3. Optional: `APP_STORE_URL` (the app's App Store page) shows "Sign in with the iPhone app" and "Get the app" on the
+   sign-in page even before anyone has connected a device.
+
+Free plan budget: a publish result looks up the devices to notify in the same D1 batch that records it and sends at
+most 10 APNs requests (one extra batch afterwards), only when someone is to be notified.
+
 ## Users, workspaces and roles
 
 One deployment can serve several people. **Accounts, posts, media, upload links and API keys belong to a workspace**;
