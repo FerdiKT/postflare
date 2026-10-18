@@ -10,7 +10,7 @@ struct MediaViewerItem: Identifiable, Hashable {
 }
 
 /// Fullscreen media viewer: pages through the media of a post. Images zoom (pinch, double tap), videos play streaming
-/// from the signed public media URL (`/m/:id/:sig/:name`, no auth header). Swipe down or the close button dismisses.
+/// from the public media URL (CDN or signed `/m/` link, no auth header). Swipe down or the close button dismisses.
 struct MediaViewer: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -290,7 +290,7 @@ final class ZoomScrollView: UIScrollView {
     }
 }
 
-/// Full-size image loading with a small in-memory cache (the viewer, sharing).
+/// Full-size image loading with a small in-memory cache (the viewer, sharing); the disk cache is `URLCache.shared`.
 enum RemoteImage {
     private static let cache: NSCache<NSURL, UIImage> = {
         let c = NSCache<NSURL, UIImage>()

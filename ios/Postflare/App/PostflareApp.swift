@@ -7,6 +7,10 @@ struct PostflareApp: App {
     @State private var model = AppModel.shared
     @Environment(\.scenePhase) private var scenePhase
 
+    init() {
+        ImageLoader.installCache()
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()

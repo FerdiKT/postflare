@@ -460,10 +460,16 @@ struct Media: Codable, Hashable, Identifiable, Sendable {
     var height: Double?
     var duration: Double?
     var alt: String?
+    /// Public media URL (CDN or signed `/m/` link), no auth header.
     var url: String
+    /// Small WebP thumbnail of an image (max 480 px); nil for videos and older images.
+    var thumbUrl: String?
     var createdAt: Double
 
     var isVideo: Bool { kind == "video" }
+    var fullURL: URL? { URL(string: url) }
+    /// The thumbnail, else the full media.
+    var thumbnailURL: URL? { thumbUrl.flatMap(URL.init(string:)) ?? fullURL }
 }
 
 struct MultipartStart: Codable, Sendable {

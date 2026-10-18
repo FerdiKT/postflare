@@ -1,4 +1,3 @@
-import AVFoundation
 import SwiftUI
 
 /// The Postflare mark: a calendar page crossed by the flare, cream on Cloudflare orange (same as the app icon).
@@ -269,29 +268,28 @@ struct MediaThumb: View {
 }
 
 /// A media id filling its frame (scaled to fill): image, or a video's first frame with a play badge and duration.
+/// Images use the server thumbnail unless `full` (hero previews), falling back to the full media.
 struct MediaContent: View {
     @Environment(AppModel.self) private var model
     var mediaId: String
     var badge = true
     var contentMode: ContentMode = .fill
+    var full = false
 
     var body: some View {
         let media = model.media[mediaId]
         ZStack {
             Color(.tertiarySystemFill)
-            if let media, let url = URL(string: media.url) {
+            if let media, let url = media.fullURL {
                 if media.isVideo {
-                    VideoFrame(url: url, contentMode: contentMode)
+                    VideoFrame(mediaId: media.id, url: url, contentMode: contentMode)
                 } else {
-                    AsyncImage(url: url) { phase in
-                        if let image = phase.image {
-                            image.resizable().aspectRatio(contentMode: contentMode)
-                        } else if phase.error != nil {
-                            Image(systemName: "photo").foregroundStyle(.secondary)
-                        } else {
-                            ProgressView()
-                        }
-                    }
+                    let thumb = media.thumbnailURL ?? url
+                    let urls = full ? [url, thumb] : [thumb, url]
+                    CachedImage(urls: thumb == url ? [url] : urls,
+                                maxPixel: full ? ImageLoader.fullPixels : ImageLoader.thumbPixels,
+                                contentMode: contentMode,
+                                placeholder: full && thumb != url ? thumb : nil)
                 }
             } else {
                 Image(systemName: "photo").foregroundStyle(.secondary)
@@ -326,28 +324,23 @@ struct MediaContent: View {
     }
 }
 
-/// First frame of a remote video (AVAssetImageGenerator), cached per URL.
+/// First frame of a remote video, generated once per install (`VideoPosters`).
 struct VideoFrame: View {
+    var mediaId: String
     var url: URL
     var contentMode: ContentMode = .fill
     @State private var image: UIImage?
 
-    private static let cache = NSCache<NSURL, UIImage>()
-
     var body: some View {
         Group {
-            if let image { Image(uiImage: image).resizable().aspectRatio(contentMode: contentMode) } else { Color.black.opacity(0.75) }
-        }
-        .task(id: url) {
-            if let cached = Self.cache.object(forKey: url as NSURL) { image = cached; return }
-            let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
-            generator.appliesPreferredTrackTransform = true
-            generator.maximumSize = CGSize(width: 800, height: 800)
-            if let (cg, _) = try? await generator.image(at: CMTime(seconds: 0.1, preferredTimescale: 600)) {
-                let ui = UIImage(cgImage: cg)
-                Self.cache.setObject(ui, forKey: url as NSURL)
-                image = ui
+            if let image = image ?? VideoPosters.cached(mediaId) {
+                Image(uiImage: image).resizable().aspectRatio(contentMode: contentMode)
+            } else {
+                Color.black.opacity(0.75)
             }
+        }
+        .task(id: mediaId) {
+            image = await VideoPosters.load(id: mediaId, url: url)
         }
     }
 }

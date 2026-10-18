@@ -150,16 +150,18 @@ private struct NoText: View {
     }
 }
 
-/// One media cell: fills its frame, opens the viewer on tap.
+/// One media cell: fills its frame, opens the viewer on tap. Hero cells (`full`, by default the only media) load the
+/// full image, grid cells the thumbnail.
 private struct MediaCell: View {
     var ids: [String]
     var index: Int
     var open: ([String], Int) -> Void
     var badge = true
+    var full: Bool?
 
     var body: some View {
         Color.clear
-            .overlay { MediaContent(mediaId: ids[index], badge: badge) }
+            .overlay { MediaContent(mediaId: ids[index], badge: badge, full: full ?? (ids.count == 1)) }
             .clipped()
             .contentShape(Rectangle())
             .onTapGesture { open(ids, index) }
@@ -252,7 +254,7 @@ private struct PreviewCarousel: View {
         VStack(spacing: 8) {
             TabView(selection: $page) {
                 ForEach(ids.indices, id: \.self) { i in
-                    MediaCell(ids: ids, index: i, open: open).tag(i)
+                    MediaCell(ids: ids, index: i, open: open, full: true).tag(i)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
@@ -358,9 +360,9 @@ private struct YouTubePreview: View {
             if first != nil {
                 if short {
                     Color.clear.aspectRatio(9 / 16, contentMode: .fit)
-                        .overlay { MediaCell(ids: ctx.post.media, index: 0, open: ctx.open) }
+                        .overlay { MediaCell(ids: ctx.post.media, index: 0, open: ctx.open, full: true) }
                 } else {
-                    MediaCell(ids: ctx.post.media, index: 0, open: ctx.open)
+                    MediaCell(ids: ctx.post.media, index: 0, open: ctx.open, full: true)
                 }
             } else {
                 Label("No video", systemImage: "video.slash").foregroundStyle(.white.opacity(0.7))
@@ -610,7 +612,7 @@ private struct StoryPreview: View {
                 Label("No media", systemImage: "photo").foregroundStyle(.white.opacity(0.7)).frame(maxHeight: .infinity)
             } else {
                 TabView(selection: $page) {
-                    ForEach(ids.indices, id: \.self) { i in MediaCell(ids: ids, index: i, open: ctx.open).tag(i) }
+                    ForEach(ids.indices, id: \.self) { i in MediaCell(ids: ids, index: i, open: ctx.open, full: true).tag(i) }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
             }
@@ -891,7 +893,7 @@ private struct ArticlePreview: View {
         VStack(alignment: .leading, spacing: 12) {
             if let first = ctx.post.media.first {
                 Color.clear.aspectRatio(1.91, contentMode: .fit)
-                    .overlay { MediaCell(ids: ctx.post.media, index: 0, open: ctx.open) }
+                    .overlay { MediaCell(ids: ctx.post.media, index: 0, open: ctx.open, full: true) }
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .id(first)
             }
