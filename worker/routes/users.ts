@@ -202,7 +202,12 @@ userRoutes.patch("/users/:id", manageUsers, async (c) => {
       db.prepare(`UPDATE users SET ${sets.join(", ")}, updated_at = ? WHERE id = ?`).bind(...binds, now(), target.id),
       // A disabled user is signed out everywhere (API keys are rejected while disabled) and their sign-in links end.
       ...(body.status === "disabled"
-        ? [db.prepare("DELETE FROM sessions WHERE user_id = ?").bind(target.id), db.prepare("DELETE FROM magic_links WHERE user_id = ?").bind(target.id)]
+        ? [
+            db.prepare("DELETE FROM sessions WHERE user_id = ?").bind(target.id),
+            db.prepare("DELETE FROM magic_links WHERE user_id = ?").bind(target.id),
+            // Their iOS devices are signed out with the sessions (device tokens) and stop getting pushes.
+            db.prepare("DELETE FROM devices WHERE user_id = ?").bind(target.id),
+          ]
         : []),
     ]);
   }
@@ -226,6 +231,7 @@ userRoutes.delete("/users/:id", manageUsers, async (c) => {
     db.prepare("DELETE FROM api_keys WHERE user_id = ?").bind(target.id),
     db.prepare("DELETE FROM oauth_states WHERE user_id = ?").bind(target.id),
     db.prepare("DELETE FROM magic_links WHERE user_id = ?").bind(target.id),
+    db.prepare("DELETE FROM devices WHERE user_id = ?").bind(target.id),
     db.prepare("DELETE FROM workspace_members WHERE user_id = ?").bind(target.id),
     db.prepare("DELETE FROM users WHERE id = ?").bind(target.id),
   ]);

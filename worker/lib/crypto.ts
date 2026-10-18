@@ -123,3 +123,25 @@ export async function pkceChallenge(verifier: string): Promise<string> {
 }
 
 export { setSetting };
+
+/** PEM (or bare base64) PKCS#8 private key → bytes. */
+export function pemToBytes(pem: string): Uint8Array {
+  return fromBase64url(pem.replace(/-----[^-]+-----/g, "").replace(/\s/g, "").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""));
+}
+
+const signingKeys = new Map<string, Promise<CryptoKey>>();
+
+/** ES256 JWT signed with an Apple .p8 key (APNs token auth). The imported key is cached per isolate. */
+export async function es256Jwt(pem: string, header: Record<string, unknown>, payload: Record<string, unknown>): Promise<string> {
+  let key = signingKeys.get(pem);
+  if (!key) {
+    key = crypto.subtle.importKey("pkcs8", pemToBytes(pem) as BufferSource, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
+    key.catch(() => signingKeys.delete(pem));
+    signingKeys.set(pem, key);
+  }
+  const head = base64url(JSON.stringify({ alg: "ES256", typ: "JWT", ...header }));
+  const body = base64url(JSON.stringify(payload));
+  // Web Crypto signs ECDSA as raw r || s (IEEE P1363), which is exactly the JWS ES256 signature format.
+  const sig = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, await key, new TextEncoder().encode(`${head}.${body}`));
+  return `${head}.${body}.${base64url(sig)}`;
+}

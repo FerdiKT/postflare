@@ -133,7 +133,7 @@ meRoutes.patch("/me", forbidDemoUser, async (c) => {
   return c.json({ ...row, role: c.var.user.role });
 });
 
-/** Change own password; signs out the user's other sessions. */
+/** Change own password; signs out the user's other sessions and devices (the iOS app calling this stays signed in). */
 export async function changePassword(c: Ctx) {
   const { current, next } = await c.req.json<{ current?: string; next?: string }>().catch(() => ({}) as { current?: string; next?: string });
   const row = await c.env.DB.prepare("SELECT password_hash FROM users WHERE id = ?").bind(c.var.user.id).first<{ password_hash: string }>();
@@ -142,7 +142,7 @@ export async function changePassword(c: Ctx) {
   if (pwError) return c.json({ error: pwError }, 400);
   await c.env.DB.batch([
     c.env.DB.prepare("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?").bind(await hashPassword(next!), now(), c.var.user.id),
-    c.env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(c.var.user.id),
+    c.env.DB.prepare("DELETE FROM sessions WHERE user_id = ? AND id != ?").bind(c.var.user.id, c.var.auth === "device" ? c.var.sessionId! : ""),
   ]);
   // Fresh session for this browser (API key callers keep using their key).
   if (c.var.auth === "session") await createSession(c, c.var.user.id, c.var.workspace?.id ?? null);
@@ -153,7 +153,7 @@ meRoutes.post("/me/password", forbidDemoUser, changePassword);
 
 /** Remember the selected workspace on the session (used when a request has no X-Workspace-Id header). */
 meRoutes.post("/me/workspace", async (c) => {
-  if (c.var.auth !== "session") return c.json({ error: "API keys are bound to one workspace" }, 400);
+  if (c.var.auth === "api_key") return c.json({ error: "API keys are bound to one workspace" }, 400);
   const { workspaceId } = await c.req.json<{ workspaceId?: string }>().catch(() => ({}) as { workspaceId?: string });
   const ws = workspaceId ? await workspaceAccess(c.env.DB, c.var.user.id, c.var.instancePermissions, workspaceId) : null;
   if (!ws) return notFound(c);

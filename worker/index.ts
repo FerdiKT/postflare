@@ -21,6 +21,7 @@ import { analyticsRoutes } from "./routes/analytics";
 import { authRoutes } from "./routes/auth";
 import { campaignRedirect, campaignRoutes } from "./routes/campaigns";
 import { demoLogin, demoPage } from "./routes/demo";
+import { deviceRoutes } from "./routes/devices";
 import { invitationPublicRoutes, invitationRoutes } from "./routes/invitations";
 import { mcpRoutes } from "./routes/mcp";
 import { mediaRoutes, publicMedia } from "./routes/media";
@@ -44,10 +45,12 @@ api.route("/invitations", invitationPublicRoutes);
 api.route("/version", versionRoute);
 // Public pricing table and payment provider webhooks (signed by the provider, no session).
 api.route("/billing", billingPublicRoutes);
-// Everything below needs a session or an API key; handlers scope by c.var.workspace and check permissions.
+// Everything below needs a session, an iOS device token or an API key; handlers scope by c.var.workspace and check
+// permissions.
 api.use("*", requireAuth);
 api.post("/auth/password", forbidDemoUser, changePassword); // Old path of POST /api/me/password.
 api.route("/", meRoutes);
+api.route("/", deviceRoutes);
 api.route("/", workspaceRoutes);
 api.route("/", userRoutes);
 api.route("/", invitationRoutes);
@@ -193,9 +196,13 @@ export async function dailyJobs(env: Env): Promise<void> {
     env.DB.prepare("DELETE FROM oauth_states WHERE created_at < ?").bind(now() - 60 * 60 * 1000).run(),
     env.DB.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(now()).run(),
     env.DB.prepare("DELETE FROM magic_links WHERE expires_at < ?").bind(now()).run(),
+    // iOS app: used/expired pairing codes and web login requests, and devices whose token was revoked or expired.
+    env.DB.prepare("DELETE FROM pairing_codes WHERE expires_at < ?").bind(now() - 60 * 60 * 1000).run(),
+    env.DB.prepare("DELETE FROM web_logins WHERE expires_at < ?").bind(now() - 60 * 60 * 1000).run(),
+    env.DB.prepare("DELETE FROM devices WHERE NOT EXISTS (SELECT 1 FROM sessions s WHERE s.id = devices.session_id AND s.expires_at > ?)").bind(now()).run(),
     env.DB.prepare("DELETE FROM upload_links WHERE expires_at < ?").bind(now() - 7 * 24 * 60 * 60 * 1000).run(),
     env.DB.prepare(
-      "DELETE FROM settings WHERE (key LIKE 'login_fail:%' OR key LIKE 'magic_link:%' OR key LIKE 'demo_login:%' OR key LIKE 'signup:%') AND json_extract(value, '$.until') < ?",
+      "DELETE FROM settings WHERE (key LIKE 'login_fail:%' OR key LIKE 'magic_link:%' OR key LIKE 'demo_login:%' OR key LIKE 'signup:%' OR key LIKE 'pair_fail:%' OR key LIKE 'app_login:%') AND json_extract(value, '$.until') < ?",
     )
       .bind(now())
       .run(),

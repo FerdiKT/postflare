@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { CreatePostsInput, ResolvePostInput, ThreadItem } from "../../shared/types";
+import type { CreatePostsInput, OverviewDTO, ResolvePostInput, ThreadItem } from "../../shared/types";
 import type { Context } from "hono";
 import { assertNotLocked, enforce, entitlements, type LimitAdds } from "../billing/entitlements";
 import { monthStart } from "../billing/host";
@@ -578,32 +578,54 @@ postRoutes.delete("/posts/:id", requirePermission("posts.write"), async (c) => {
   return c.json({ ok: true });
 });
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Start of a period from a query parameter (ms), else `fallback`. */
+function periodStart(v: string | undefined, fallback: number): number {
+  const n = Number(v);
+  return v && Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+/**
+ * Dashboard of the web app and home screen of the iOS app: one D1 round trip (batch). `todayStart` / `weekStart` (ms)
+ * let the client use its own time zone; defaults are UTC midnight and UTC Monday.
+ */
 postRoutes.get("/overview", requirePermission("posts.read"), async (c) => {
   const ws = wsId(c);
   if (isDemo(c)) await simulateDueDemoPosts(c.env, ws);
-  const { results: counts } = await c.env.DB.prepare("SELECT status, COUNT(*) AS n FROM posts WHERE workspace_id = ? GROUP BY status")
-    .bind(ws)
-    .all<{ status: string; n: number }>();
-  const { results: upcoming } = await c.env.DB.prepare(
+  const t = now();
+  const midnight = Math.floor(t / DAY_MS) * DAY_MS;
+  const todayStart = periodStart(c.req.query("todayStart"), midnight);
+  // 1970-01-01 was a Thursday: (days + 3) % 7 days since Monday.
+  const weekStart = periodStart(c.req.query("weekStart"), midnight - ((Math.floor(t / DAY_MS) + 3) % 7) * DAY_MS);
+  const db = c.env.DB;
+  const [counts, upcoming, recent, failures, accounts, periods] = await db.batch<any>([
+    db.prepare("SELECT status, COUNT(*) AS n FROM posts WHERE workspace_id = ? GROUP BY status").bind(ws),
     // Posts being published right now stay listed (first) until they have a result.
-    "SELECT * FROM posts WHERE workspace_id = ? AND status IN ('publishing', 'scheduled') ORDER BY status = 'publishing' DESC, scheduled_at LIMIT 10",
-  )
-    .bind(ws)
-    .all<PostRow>();
-  const { results: recent } = await c.env.DB.prepare(
-    "SELECT * FROM posts WHERE workspace_id = ? AND status IN ('published', 'failed', 'needs_check') ORDER BY updated_at DESC LIMIT 10",
-  )
-    .bind(ws)
-    .all<PostRow>();
-  const accounts = await c.env.DB.prepare(
-    "SELECT COUNT(*) AS total, SUM(status = 'reconnect') AS reconnect FROM accounts WHERE workspace_id = ?",
-  )
-    .bind(ws)
-    .first<{ total: number; reconnect: number }>();
-  return c.json({
-    counts: Object.fromEntries(counts.map((r) => [r.status, r.n])),
-    upcoming: upcoming.map(postDto),
-    recent: recent.map(postDto),
-    accounts: { total: accounts?.total ?? 0, reconnect: accounts?.reconnect ?? 0 },
-  });
+    db.prepare("SELECT * FROM posts WHERE workspace_id = ? AND status IN ('publishing', 'scheduled') ORDER BY status = 'publishing' DESC, scheduled_at LIMIT 10").bind(ws),
+    db.prepare("SELECT * FROM posts WHERE workspace_id = ? AND status IN ('published', 'failed', 'needs_check') ORDER BY updated_at DESC LIMIT 10").bind(ws),
+    db.prepare("SELECT * FROM posts WHERE workspace_id = ? AND status IN ('failed', 'needs_check') ORDER BY updated_at DESC LIMIT 5").bind(ws),
+    db.prepare("SELECT COUNT(*) AS total, SUM(status = 'reconnect') AS reconnect FROM accounts WHERE workspace_id = ?").bind(ws),
+    // A post's time: when it was published, else when it is (or was) scheduled, else (drafts) when it was created.
+    db
+      .prepare(
+        `SELECT status, SUM(at >= ?1 AND at < ?2) AS today, SUM(at >= ?3 AND at < ?4) AS week FROM (
+           SELECT status, CASE WHEN status = 'published' THEN COALESCE(published_at, updated_at) ELSE COALESCE(scheduled_at, created_at) END AS at
+           FROM posts WHERE workspace_id = ?5
+         ) WHERE (at >= ?1 AND at < ?2) OR (at >= ?3 AND at < ?4) GROUP BY status`,
+      )
+      .bind(todayStart, todayStart + DAY_MS, weekStart, weekStart + 7 * DAY_MS, ws),
+  ]);
+  const by = (key: "today" | "week") =>
+    Object.fromEntries((periods.results as Array<{ status: string; today: number; week: number }>).filter((r) => r[key] > 0).map((r) => [r.status, r[key]]));
+  const acc = accounts.results[0] as { total: number; reconnect: number | null } | undefined;
+  const out: OverviewDTO = {
+    counts: Object.fromEntries((counts.results as Array<{ status: string; n: number }>).map((r) => [r.status, r.n])),
+    periods: { today: by("today"), week: by("week"), todayStart, weekStart },
+    upcoming: (upcoming.results as PostRow[]).map(postDto),
+    recent: (recent.results as PostRow[]).map(postDto),
+    failures: (failures.results as PostRow[]).map(postDto),
+    accounts: { total: acc?.total ?? 0, reconnect: acc?.reconnect ?? 0 },
+  };
+  return c.json(out);
 });

@@ -28,5 +28,11 @@ declare namespace Cloudflare {
     SIGNUP_DB: D1Database;
     /** Own instance for the Turnstile bot check (sign-up, sign-in links, login after failures; mocked siteverify). */
     TURNSTILE_DB: D1Database;
+    /** Own instance for the iOS app: device tokens, pairing codes, devices, permissions across workspaces. */
+    DEVICES_DB: D1Database;
+    /** Own instance for APNs push notifications of publish results (mocked api.push.apple.com, D1 budget). */
+    PUSH_DB: D1Database;
+    /** Own instance for signing in on the web with the app (QR and push with number matching). */
+    APP_LOGIN_DB: D1Database;
   }
 }

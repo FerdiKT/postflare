@@ -8,6 +8,9 @@ import { newId, now, randomToken, sha256Hex } from "./util";
 
 export const SESSION_COOKIE = "pf_session";
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+/** Device tokens (iOS app, `Bearer pfd_...`) live a year and slide: each use after 10 minutes extends them. */
+export const DEVICE_SESSION_TTL_MS = 365 * 24 * 60 * 60 * 1000;
+const DEVICE_TOUCH_MS = 10 * 60 * 1000;
 
 export interface CurrentUser {
   id: string;
@@ -36,15 +39,18 @@ export interface CurrentWorkspace {
 export type AppEnv = {
   Bindings: Env;
   Variables: {
-    auth: "session" | "api_key";
+    /** session: web cookie; device: iOS app token (acts like a web session); api_key: bound to one workspace. */
+    auth: "session" | "device" | "api_key";
     user: CurrentUser;
     instancePermissions: InstancePermission[];
     /** Null when the user has no workspace or the requested one is not accessible (see `workspaceError`). */
     workspace: CurrentWorkspace | null;
     workspaceError?: string;
-    /** Hash of the session id (sessions.id) for session requests. */
+    /** Hash of the session id (sessions.id) for session and device requests. */
     sessionId?: string;
     sessionWorkspaceId?: string | null;
+    /** devices.id of the calling iOS app install (device token requests). */
+    deviceId?: string;
     apiKeyId?: string;
     /** Content-Security-Policy of an HTML response (lib/headers.ts; default: PAGE_CSP). */
     csp?: string;
@@ -92,6 +98,24 @@ export async function createSession(c: Ctx, userId: string, workspaceId: string 
   });
 }
 
+/**
+ * A device session for the iOS app: returns its bearer token (`pfd_...`, only its hash is stored) and the devices row
+ * that represents the install (push token, preferences; GET /api/devices). One batch.
+ */
+export async function createDeviceSession(db: D1Database, userId: string, workspaceId: string | null, name: string | null) {
+  const token = `pfd_${randomToken(32)}`;
+  const sessionId = await sha256Hex(token);
+  const deviceId = newId("dev_");
+  const t = now();
+  await db.batch([
+    db
+      .prepare("INSERT INTO sessions (id, user_id, workspace_id, created_at, expires_at, kind, name, last_used_at) VALUES (?, ?, ?, ?, ?, 'device', ?, ?)")
+      .bind(sessionId, userId, workspaceId, t, t + DEVICE_SESSION_TTL_MS, name, t),
+    db.prepare("INSERT INTO devices (id, user_id, session_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)").bind(deviceId, userId, sessionId, name, t, t),
+  ]);
+  return { token, sessionId, deviceId };
+}
+
 export async function destroySession(c: Ctx) {
   const id = getCookie(c, SESSION_COOKIE);
   if (id) await c.env.DB.prepare("DELETE FROM sessions WHERE id = ?").bind(await sha256Hex(id)).run();
@@ -106,13 +130,39 @@ export async function sessionUser(c: Ctx) {
   const row = await c.env.DB.prepare(
     `SELECT ${USER_COLUMNS}, s.workspace_id AS session_workspace_id FROM sessions s
      JOIN users u ON u.id = s.user_id JOIN roles r ON r.id = u.role_id
-     WHERE s.id = ? AND s.expires_at > ? AND u.status = 'active'`,
+     WHERE s.id = ? AND s.kind = 'web' AND s.expires_at > ? AND u.status = 'active'`,
   )
     .bind(hash, now())
     .first<UserRow & { session_workspace_id: string | null }>();
   // Demo sessions end as soon as the instance turns the demo off.
   if (!row || (row.is_demo && !demoEnabled(c.env))) return null;
   return { ...toUser(row), sessionId: hash, sessionWorkspaceId: row.session_workspace_id };
+}
+
+/** The device token of an `Authorization: Bearer pfd_...` header, or null. */
+export const deviceToken = (header: string | undefined) => header?.match(/^Bearer\s+(pfd_\S+)$/i)?.[1] ?? null;
+
+/**
+ * The (active, non-demo) user of an iOS app device token, or null. One query; at most every 10 minutes one more that
+ * records the use and slides the expiry (a year from the last use).
+ */
+export async function deviceUser(env: Env, header: string | undefined) {
+  const token = deviceToken(header);
+  if (!token) return null;
+  const hash = await sha256Hex(token);
+  const row = await env.DB.prepare(
+    `SELECT ${USER_COLUMNS}, s.workspace_id AS session_workspace_id, s.last_used_at, d.id AS device_id FROM sessions s
+     JOIN users u ON u.id = s.user_id JOIN roles r ON r.id = u.role_id LEFT JOIN devices d ON d.session_id = s.id
+     WHERE s.id = ? AND s.kind = 'device' AND s.expires_at > ? AND u.status = 'active' AND u.is_demo = 0`,
+  )
+    .bind(hash, now())
+    .first<UserRow & { session_workspace_id: string | null; last_used_at: number | null; device_id: string | null }>();
+  if (!row) return null;
+  const t = now();
+  if (!row.last_used_at || row.last_used_at < t - DEVICE_TOUCH_MS) {
+    await env.DB.prepare("UPDATE sessions SET last_used_at = ?, expires_at = ? WHERE id = ?").bind(t, t + DEVICE_SESSION_TTL_MS, hash).run();
+  }
+  return { ...toUser(row), sessionId: hash, sessionWorkspaceId: row.session_workspace_id, deviceId: row.device_id };
 }
 
 export async function isSessionValid(c: Ctx): Promise<boolean> {
@@ -235,9 +285,9 @@ export async function firstWorkspace(db: D1Database, userId: string, instancePer
 }
 
 /**
- * Authenticates the request (API key or session cookie) and sets `user`, `instancePermissions` and `workspace`.
- * Workspace: API keys are bound to theirs; sessions use `X-Workspace-Id`, else the session's last workspace,
- * else the user's first workspace. Returns an error response, or null on success.
+ * Authenticates the request (API key, iOS device token or session cookie) and sets `user`, `instancePermissions` and
+ * `workspace`. Workspace: API keys are bound to theirs; sessions and device tokens use `X-Workspace-Id`, else the
+ * session's last workspace, else the user's first workspace. Returns an error response, or null on success.
  */
 export async function authenticate(c: Ctx): Promise<Response | null> {
   const db = c.env.DB;
@@ -268,11 +318,16 @@ export async function authenticate(c: Ctx): Promise<Response | null> {
     c.set("workspace", ws);
     return null;
   }
-  const session = await sessionUser(c);
+  // iOS app: a device token acts like a web session of its user (every workspace, same permissions). A pfd_ header
+  // never falls back to the cookie. Not a CSRF target: browsers never attach Authorization headers by themselves.
+  const device = deviceToken(c.req.header("authorization")) ? await deviceUser(c.env, c.req.header("authorization")) : undefined;
+  if (device === null) return c.json({ error: "This device is signed out. Sign in again in the app.", code: "device_signed_out" }, 401);
+  const session = device ?? (await sessionUser(c));
   if (!session) return c.json({ error: "Unauthorized" }, 401);
   // Mutations from the browser must come from our own origin (CSRF defence on top of SameSite=Lax).
-  if (isCrossSiteMutation(c)) return c.json({ error: "Cross-origin request blocked" }, 403);
-  c.set("auth", "session");
+  if (!device && isCrossSiteMutation(c)) return c.json({ error: "Cross-origin request blocked" }, 403);
+  c.set("auth", device ? "device" : "session");
+  if (device?.deviceId) c.set("deviceId", device.deviceId);
   c.set("sessionId", session.sessionId);
   c.set("sessionWorkspaceId", session.sessionWorkspaceId);
   c.set("user", session.user);
@@ -308,8 +363,9 @@ export function isCrossSiteMutation(c: Ctx): boolean {
  * receive the social accounts the victim connects) or sign them out.
  */
 export const sameOriginMutations: MiddlewareHandler<AppEnv> = async (c, next) => {
-  // Payment provider webhooks (public, signed, never from a browser) are exempt.
-  if (c.req.path.startsWith("/api/billing/webhooks/")) return next();
+  // Payment provider webhooks (public, signed, never from a browser) are exempt, and so are iOS app requests with a
+  // device token (a cross-site page cannot set an Authorization header without a CORS preflight, which never passes).
+  if (c.req.path.startsWith("/api/billing/webhooks/") || deviceToken(c.req.header("authorization"))) return next();
   if (isCrossSiteMutation(c)) return c.json({ error: "Cross-origin request blocked" }, 403);
   return next();
 };

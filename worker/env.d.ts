@@ -19,4 +19,14 @@ interface Env {
   TURNSTILE_SITE_KEY?: string;
   /** Optional Turnstile secret key (secret), with TURNSTILE_SITE_KEY. Wins over the one stored in Admin → Settings. */
   TURNSTILE_SECRET_KEY?: string;
+  /** iOS app push (APNs token auth): contents of the .p8 key (secret). Push is off unless all four APNS_* are set. */
+  APNS_PRIVATE_KEY?: string;
+  /** Key ID of the APNs .p8 key (var). */
+  APNS_KEY_ID?: string;
+  /** Apple Developer Team ID (var). */
+  APNS_TEAM_ID?: string;
+  /** Bundle ID of the iOS app, the APNs topic (var), e.g. app.ferdi.postflare. */
+  APNS_TOPIC?: string;
+  /** Optional App Store URL of the Postflare iOS app: the sign-in page offers "Sign in with the iPhone app" and "Get the app". */
+  APP_STORE_URL?: string;
 }

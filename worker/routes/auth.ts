@@ -1,15 +1,17 @@
 import { Hono, type Context } from "hono";
-import type { SetupInput, SignupDTO, SignupInput } from "../../shared/types";
+import type { AuthStatusDTO, DeviceTokenDTO, SetupInput, SignupDTO, SignupInput } from "../../shared/types";
 import { signupEnabled } from "../billing/config";
 import { trialStatements } from "../billing/entitlements";
-import { createSession, destroySession, sessionUser, throttleIp, type AppEnv } from "../lib/auth";
+import { createDeviceSession, createSession, destroySession, deviceToken, sessionUser, throttleIp, type AppEnv } from "../lib/auth";
 import { demoEnabled } from "../lib/demo";
 import { emailConfigured, magicLinkEmail, magicLinkEnabled, sendEmail, signupExistingEmail, verifySignupEmail } from "../lib/email";
 import { hashPassword, needsRehash, verifyPassword } from "../lib/crypto";
-import { ROLE } from "../lib/permissions";
+import { ROLE, parsePermissions } from "../lib/permissions";
+import { apnsConfigured } from "../lib/push";
 import { baseUrl, getSetting, setSetting } from "../lib/settings";
 import { CAPTCHA_UNAVAILABLE, allowedHostnames, turnstileConfig, turnstileSiteKey, verifyTurnstile, type TurnstileAction } from "../lib/turnstile";
 import { createWorkspaceStatements, normalizeEmail, normalizeName, passwordError } from "../lib/users";
+import { listWorkspaces } from "./workspaces";
 import { newId, now, parseJson, randomToken, sha256Hex } from "../lib/util";
 
 export const authRoutes = new Hono<AppEnv>();
@@ -20,17 +22,33 @@ async function hasUsers(db: D1Database) {
   return !!(await db.prepare("SELECT 1 AS x FROM users WHERE is_demo = 0 AND status != 'pending' LIMIT 1").first());
 }
 
+/** Signed-in iOS app installs on the instance: any at all, and any with a push token (one query). */
+export async function appDevices(db: D1Database): Promise<{ any: boolean; push: boolean }> {
+  const row = await db
+    .prepare(
+      `SELECT EXISTS (SELECT 1 FROM devices d JOIN sessions s ON s.id = d.session_id AND s.expires_at > ?1) AS any_device,
+         EXISTS (SELECT 1 FROM devices d JOIN sessions s ON s.id = d.session_id AND s.expires_at > ?1 WHERE d.apns_token IS NOT NULL) AS push_device`,
+    )
+    .bind(now())
+    .first<{ any_device: number; push_device: number }>();
+  return { any: !!row?.any_device, push: !!row?.push_device };
+}
+
 authRoutes.get("/status", async (c) => {
-  const [setup, session, magicLink, signup, turnstile] = await Promise.all([
+  const [setup, session, magicLink, signup, turnstile, devices] = await Promise.all([
     hasUsers(c.env.DB),
     sessionUser(c),
     magicLinkEnabled(c.env),
     signupEnabled(c.env.DB),
     turnstileSiteKey(c.env),
+    appDevices(c.env.DB),
   ]);
   // Demo visitors are signed in even on an instance that has no real user yet.
   const demo = !!session?.user.demo;
-  return c.json({
+  // "Sign in with the iPhone app" (docs/app-login-spec.md): the app exists for this instance (APP_STORE_URL) or is in
+  // use (a signed-in device). "Send to my iPhone" also needs APNs and a device with push on.
+  const appLogin = setup && (!!c.env.APP_STORE_URL || devices.any);
+  const body: AuthStatusDTO = {
     setup: setup || demo,
     authenticated: !!session && (setup || demo),
     // The setup form then asks for the SETUP_TOKEN secret.
@@ -43,14 +61,18 @@ authRoutes.get("/status", async (c) => {
     ...(setup && signup ? { signup: true } : {}),
     // Cloudflare Turnstile is configured: sign-up, sign-in links and sign-in after 3 failures need a widget token.
     ...(turnstile ? { turnstileSiteKey: turnstile } : {}),
-  });
+    ...(appLogin ? { appLogin: true as const } : {}),
+    ...(appLogin && devices.push && apnsConfigured(c.env) ? { pushLogin: true as const } : {}),
+    ...(c.env.APP_STORE_URL ? { appStoreUrl: c.env.APP_STORE_URL } : {}),
+  };
+  return c.json(body);
 });
 
 /**
  * Bot check (worker/lib/turnstile.ts) of a public auth form, before any expensive work: null when it passes or
  * Turnstile is not configured, else the error response (400 code "captcha", 503 when Cloudflare cannot be reached).
  */
-async function botCheck(c: Context<AppEnv>, action: TurnstileAction, token: unknown, extra: Record<string, unknown> = {}): Promise<Response | null> {
+export async function botCheck(c: Context<AppEnv>, action: TurnstileAction, token: unknown, extra: Record<string, unknown> = {}): Promise<Response | null> {
   const cfg = await turnstileConfig(c.env, { secret: true });
   if (!cfg.siteKey || !cfg.secretSet) return null;
   // A stored secret that no longer decrypts (SECRET_KEY changed): fail closed rather than silently turning the check off.
@@ -133,21 +155,25 @@ const CAPTCHA_AFTER_FAILURES = 3;
 // Verified for unknown emails so they cost the same PBKDF2 as wrong passwords (no user enumeration by timing).
 const DUMMY_HASH = "pbkdf2$20000$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
-authRoutes.post("/login", async (c) => {
-  type LoginBody = { email?: string; password?: string; turnstileToken?: unknown };
-  const body = await c.req.json<LoginBody>().catch(() => ({}) as LoginBody);
+type LoginBody = { email?: unknown; password?: unknown; turnstileToken?: unknown; deviceName?: unknown };
+
+/**
+ * Email + password check shared by the web sign-in and the iOS app's (POST /device): persistent per-IP and per-email
+ * throttle, the bot check after 3 recent failures, pending and disabled users refused. The user id, or the error.
+ */
+async function checkLogin(c: Context<AppEnv>, body: LoginBody): Promise<{ userId: string } | { response: Response }> {
   const ipKey = `login_fail:${throttleIp(c.req.header("cf-connecting-ip"))}`;
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   const emailKey = `login_fail:email:${email}`;
   const [ipF, emailF] = await Promise.all([failures(c.env, ipKey), email ? failures(c.env, emailKey) : { n: 0, until: 0 }]);
   const locked = (f: Failures, max: number) => f.n >= max && f.until > Date.now();
   if (locked(ipF, MAX_FAILURES_IP) || locked(emailF, MAX_FAILURES_EMAIL)) {
-    return c.json({ error: "Too many attempts, try again in a few minutes" }, 429);
+    return { response: c.json({ error: "Too many attempts, try again in a few minutes" }, 429) };
   }
   const recent = (f: Failures) => (f.until > Date.now() ? f.n : 0);
   if (Math.max(recent(ipF), recent(emailF)) >= CAPTCHA_AFTER_FAILURES) {
     const blocked = await botCheck(c, "login", body.turnstileToken, { captchaRequired: true });
-    if (blocked) return blocked;
+    if (blocked) return { response: blocked };
   }
   const user = email
     ? await c.env.DB.prepare("SELECT id, password_hash, status FROM users WHERE email = ? AND is_demo = 0")
@@ -160,10 +186,10 @@ authRoutes.post("/login", async (c) => {
     const [ipN, emailN] = await Promise.all([recordFailure(c.env, ipKey, ipF), email ? recordFailure(c.env, emailKey, emailF) : 0]);
     // From now on this IP or email needs the bot check: the sign-in form shows the widget.
     const captcha = Math.max(ipN, emailN) >= CAPTCHA_AFTER_FAILURES && !!(await turnstileSiteKey(c.env));
-    return c.json({ error: "Wrong email or password", ...(captcha ? { captchaRequired: true } : {}) }, 401);
+    return { response: c.json({ error: "Wrong email or password", ...(captcha ? { captchaRequired: true } : {}) }, 401) };
   }
-  if (user.status === "pending") return c.json({ error: "Confirm your email first: open the link we sent you when you signed up" }, 403);
-  if (user.status !== "active") return c.json({ error: "This account is disabled" }, 403);
+  if (user.status === "pending") return { response: c.json({ error: "Confirm your email first: open the link we sent you when you signed up" }, 403) };
+  if (user.status !== "active") return { response: c.json({ error: "This account is disabled" }, 403) };
   await c.env.DB.batch([
     c.env.DB.prepare("DELETE FROM settings WHERE key IN (?, ?)").bind(ipKey, emailKey),
     c.env.DB.prepare("UPDATE users SET last_login_at = ? WHERE id = ?").bind(now(), user.id),
@@ -171,7 +197,96 @@ authRoutes.post("/login", async (c) => {
   if (needsRehash(user.password_hash)) {
     await c.env.DB.prepare("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?").bind(await hashPassword(password), now(), user.id).run();
   }
-  await createSession(c, user.id);
+  return { userId: user.id };
+}
+
+authRoutes.post("/login", async (c) => {
+  const body = await c.req.json<LoginBody>().catch(() => ({}) as LoginBody);
+  const r = await checkLogin(c, body);
+  if ("response" in r) return r.response;
+  await createSession(c, r.userId);
+  return c.json({ ok: true });
+});
+
+// ---------- iOS app (docs/ios-api.md): device tokens ----------
+
+/** Name of the device as given by the app ("Ferdi's iPhone"), at most 100 characters. */
+const deviceName = (v: unknown) => normalizeName(v) ?? "iPhone";
+
+/** Device token + who it belongs to: what the app needs to start (same workspaces as GET /api/me). */
+async function deviceResponse(c: Context<AppEnv>, userId: string, workspaceId: string | null, name: string): Promise<DeviceTokenDTO> {
+  const db = c.env.DB;
+  const user = await db
+    .prepare("SELECT u.id, u.name, u.email, u.role_id, r.name AS role_name, r.permissions FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = ?")
+    .bind(userId)
+    .first<{ id: string; name: string; email: string; role_id: string; role_name: string; permissions: string }>();
+  const instancePermissions = parsePermissions(user!.permissions, "instance") as DeviceTokenDTO["instancePermissions"];
+  const workspaces = (await listWorkspaces(db, userId, instancePermissions)).map(({ createdAt: _c, memberCount: _m, ...w }) => w);
+  const current = workspaces.find((w) => w.id === workspaceId)?.id ?? workspaces.find((w) => !w.viaAdmin)?.id ?? workspaces[0]?.id ?? null;
+  const device = await createDeviceSession(db, userId, current, name);
+  return {
+    token: device.token,
+    deviceId: device.deviceId,
+    user: { id: user!.id, name: user!.name, email: user!.email, role: { id: user!.role_id, name: user!.role_name } },
+    instancePermissions,
+    workspaces,
+    currentWorkspaceId: current,
+    server: await baseUrl(c.env, c.req.url),
+  };
+}
+
+/** iOS app sign-in with email and password (same throttle, bot check and refusals as /login): a device token. */
+authRoutes.post("/device", async (c) => {
+  const body = await c.req.json<LoginBody>().catch(() => ({}) as LoginBody);
+  const r = await checkLogin(c, body);
+  if ("response" in r) return r.response;
+  return c.json(await deviceResponse(c, r.userId, null, deviceName(body.deviceName)));
+});
+
+const MAX_PAIR_FAILURES_IP = 10;
+const INVALID_CODE = "This code is invalid, used or expired. Show a new one in Postflare on the web (Profile → Postflare for iPhone).";
+
+/** Pairing code as typed or scanned: letters and digits only ("ABCDE-FGHJK" → "ABCDEFGHJK"). */
+export const normalizeCode = (v: unknown) => (typeof v === "string" ? v.toUpperCase().replace(/[^A-Z0-9]/g, "") : "");
+
+/** iOS app sign-in with a pairing code (QR code on the web Profile page): single use, 5 minutes. */
+authRoutes.post("/pair", async (c) => {
+  const body = await c.req.json<{ code?: unknown; deviceName?: unknown }>().catch(() => ({}) as { code?: unknown; deviceName?: unknown });
+  const code = normalizeCode(body.code);
+  const ipKey = `pair_fail:${throttleIp(c.req.header("cf-connecting-ip"))}`;
+  const ipF = await failures(c.env, ipKey);
+  if (ipF.n >= MAX_PAIR_FAILURES_IP && ipF.until > Date.now()) return c.json({ error: "Too many attempts, try again in a few minutes" }, 429);
+  if (code.length < 8 || code.length > 16) {
+    await recordFailure(c.env, ipKey, ipF);
+    return c.json({ error: INVALID_CODE }, 400);
+  }
+  const t = now();
+  const row = await c.env.DB.prepare(
+    `UPDATE pairing_codes SET used_at = ? WHERE code_hash = ? AND used_at IS NULL AND expires_at > ?
+       AND EXISTS (SELECT 1 FROM users u WHERE u.id = pairing_codes.user_id AND u.status = 'active' AND u.is_demo = 0)
+     RETURNING id, user_id, workspace_id`,
+  )
+    .bind(t, await sha256Hex(code), t)
+    .first<{ id: string; user_id: string; workspace_id: string | null }>();
+  if (!row) {
+    await recordFailure(c.env, ipKey, ipF);
+    return c.json({ error: INVALID_CODE }, 400);
+  }
+  const out = await deviceResponse(c, row.user_id, row.workspace_id, deviceName(body.deviceName));
+  // The web page polling the code shows which device used it.
+  await c.env.DB.prepare("UPDATE pairing_codes SET device_id = ? WHERE id = ?").bind(out.deviceId, row.id).run();
+  return c.json(out);
+});
+
+/** The app signs out: revokes its device token (and with it the device's push registration). */
+authRoutes.post("/device/logout", async (c) => {
+  const token = deviceToken(c.req.header("authorization"));
+  if (!token) return c.json({ error: "Send the device token as Authorization: Bearer pfd_..." }, 401);
+  const id = await sha256Hex(token);
+  await c.env.DB.batch([
+    c.env.DB.prepare("DELETE FROM devices WHERE session_id = ?").bind(id),
+    c.env.DB.prepare("DELETE FROM sessions WHERE id = ? AND kind = 'device'").bind(id),
+  ]);
   return c.json({ ok: true });
 });
 
@@ -367,6 +482,12 @@ authRoutes.post("/signup/verify", async (c) => {
 });
 
 authRoutes.post("/logout", async (c) => {
+  // The app may call the web logout too: it ends its device token, never a cookie session.
+  if (deviceToken(c.req.header("authorization"))) {
+    const id = await sha256Hex(deviceToken(c.req.header("authorization"))!);
+    await c.env.DB.batch([c.env.DB.prepare("DELETE FROM devices WHERE session_id = ?").bind(id), c.env.DB.prepare("DELETE FROM sessions WHERE id = ? AND kind = 'device'").bind(id)]);
+    return c.json({ ok: true });
+  }
   await destroySession(c);
   return c.json({ ok: true });
 });

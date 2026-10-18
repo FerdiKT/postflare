@@ -6,6 +6,7 @@ import { loadMediaItems } from "./lib/media";
 import { nextCheckpoint } from "./lib/metrics";
 import { ensureSchema } from "./lib/migrate";
 import { getPostRow, logPost, logStatement, type PostRow } from "./lib/posts";
+import { postAlert, postPushJob, postPushStatement, pushAlert, type PostPushJob, type PostPushKind } from "./lib/push";
 import { baseUrl } from "./lib/settings";
 import { addUsage, hasUrl, newMeter, publishEventStatement, replyEventStatement, type AttemptUsage, type PublishMeter } from "./lib/usage";
 import { errorMessage, now, parseJson } from "./lib/util";
@@ -114,17 +115,21 @@ export class PublishWorkflow extends WorkflowEntrypoint<Env, PublishParams> {
     const gate = await step.do("sandbox check", async () => publishGate(this.env.DB, postId));
     const demo = typeof gate === "boolean" ? gate : gate.demo;
     if (typeof gate !== "boolean" && gate.locked && !demo) {
-      await step.do("mark locked", async () => {
+      const push = await step.do("mark locked", async () => {
         const db = this.env.DB;
         const t = now();
-        await db.batch([
+        const notify = postPushStatement(this.env, db, postId, revision, "failed", t);
+        const res = await db.batch([
           db
             .prepare("UPDATE posts SET status = 'failed', error = ?, updated_at = ? WHERE id = ? AND revision = ? AND status = 'publishing'")
             .bind(LOCKED_MESSAGE, t, postId, revision),
           guardedLog(db, postId, revision, "failed", t, "error", `Publishing failed: ${LOCKED_MESSAGE}`),
           publishEventStatement(db, { postId, revision, status: "failed", t, meter, message: LOCKED_MESSAGE }),
+          ...(notify ? [notify] : []),
         ]);
+        return pushJobOf("failed", postId, notify ? res[3] : undefined);
       });
+      await this.notify(step, push);
       return { failed: true };
     }
     if (demo) {
@@ -156,30 +161,36 @@ export class PublishWorkflow extends WorkflowEntrypoint<Env, PublishParams> {
       const failure = outcome;
       if (failure.action === "stale") return { skipped: true };
       const check = failure.action === "check";
-      await step.do(check ? "mark needs check" : "mark failed", async () => {
+      const push = await step.do(check ? "mark needs check" : "mark failed", async () => {
         const db = this.env.DB;
         const status = check ? "needs_check" : "failed";
         const t = now();
+        // Push targets (iOS app) only when APNs is configured: a SELECT guarded like the log, in the same batch.
+        const notify = postPushStatement(this.env, db, postId, revision, status, t);
         // One batch: the guarded update, then its log and usage event, both only if this very update happened.
-        await db.batch([
+        const res = await db.batch([
           db
             .prepare("UPDATE posts SET status = ?, error = ?, updated_at = ? WHERE id = ? AND revision = ? AND status = 'publishing'")
             .bind(status, failure.message.slice(0, 2000), t, postId, revision),
           guardedLog(db, postId, revision, status, t, check ? "warn" : "error", check ? failure.message : `Publishing failed: ${failure.message}`),
           publishEventStatement(db, { postId, revision, status, t, meter, message: failure.message }),
+          ...(notify ? [notify] : []),
         ]);
+        return pushJobOf(status, postId, notify ? res[3] : undefined);
       });
+      await this.notify(step, push);
       return check ? { needsCheck: true } : { failed: true };
     }
     const result = outcome.value as Extract<PublishResult, { status: "published" }>;
     const root: Done = { externalId: result.externalId, url: result.url ?? null, data: result.data ?? {} };
 
-    const marked = await step.do("mark published", async () => {
+    const markResult = await step.do("mark published", async () => {
       const db = this.env.DB;
       const t = now();
-      // Guarded: an instance whose post was resolved, edited or retried meanwhile must not overwrite it. The log and
-      // the usage event join the same batch, guarded on this update (one round trip).
-      const [res] = await db.batch([
+      const notify = postPushStatement(this.env, db, postId, revision, "published", t);
+      // Guarded: an instance whose post was resolved, edited or retried meanwhile must not overwrite it. The log, the
+      // usage event and the push targets join the same batch, guarded on this update (one round trip).
+      const [res, , , targets] = await db.batch([
         db
           .prepare(
             // Analytics start an hour after publishing (lib/metrics.ts); `external_data` is passed to postMetrics.
@@ -187,13 +198,16 @@ export class PublishWorkflow extends WorkflowEntrypoint<Env, PublishParams> {
           )
           .bind(root.externalId, root.url, Object.keys(root.data).length ? JSON.stringify(root.data) : null, t, t, nextCheckpoint(t, t), postId, revision),
         guardedLog(db, postId, revision, "published", t, "info", `Published${root.url ? `: ${root.url}` : ` (id ${root.externalId})`}`),
-        // +1: the "load thread" step that always follows (follow-ups record their own steps).
+        // +1: the "load thread" step that always follows (follow-ups record their own steps; "notify" is not counted).
         publishEventStatement(db, { postId, revision, status: "published", t, meter: { ...meter, steps: meter.steps + 1 } }),
+        ...(notify ? [notify] : []),
       ]);
-      return res.meta.changes > 0;
+      return { marked: res.meta.changes > 0, push: pushJobOf("published", postId, targets) };
     });
-    // Older instances returned nothing from this step (undefined): they marked it unconditionally.
+    // Older instances returned a boolean (or nothing: they marked it unconditionally).
+    const marked = markResult && typeof markResult === "object" ? markResult.marked : markResult;
     if (marked === false) return { skipped: true };
+    await this.notify(step, markResult && typeof markResult === "object" ? markResult.push : null);
 
     const thread = await step.do("load thread", async () => {
       const row = await getPostRow(this.env, postId);
@@ -260,6 +274,17 @@ export class PublishWorkflow extends WorkflowEntrypoint<Env, PublishParams> {
       break;
     }
     return { published: true, externalId: root.externalId };
+  }
+
+  /**
+   * Push notification of a publish result to the iOS app (worker/lib/push.ts), its own step so a slow or failing APNs
+   * never touches the post: only when the mark step found devices to notify, never retried (no duplicate alerts).
+   */
+  private async notify(step: WorkflowStep, job: PostPushJob | null | undefined) {
+    if (!job || !Array.isArray(job.devices) || !job.devices.length) return;
+    await step
+      .do("notify", { retries: NEVER_RETRY, timeout: "1 minute" }, async () => pushAlert(this.env, this.env.DB, job.devices, postAlert(job, getProvider(job.provider)?.name ?? job.provider)))
+      .catch((err) => console.error("push notification step failed", err));
   }
 
   /**
@@ -414,6 +439,11 @@ type AttemptFn<T> = (c: {
   row: PostRow;
   usage: AttemptUsage;
 }) => Promise<T>;
+
+/** The push job of a mark step's batch result (the rows of `postPushStatement`), as a plain JSON step value. */
+function pushJobOf(kind: PostPushKind, postId: string, result: D1Result | undefined): PostPushJob | null {
+  return postPushJob(kind, postId, result?.results as Parameters<typeof postPushJob>[2]);
+}
 
 /** INSERT of a post log that only happens when the post is at `revision` in `status` with `updated_at = t`. */
 function guardedLog(db: D1Database, postId: string, revision: number, status: PostRow["status"], t: number, level: "info" | "warn" | "error", message: string) {

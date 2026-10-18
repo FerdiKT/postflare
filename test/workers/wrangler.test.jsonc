@@ -18,7 +18,10 @@
     { "binding": "BILLING_DB", "database_name": "postflare-billing", "database_id": "billing" },
     { "binding": "WEBHOOKS_DB", "database_name": "postflare-webhooks", "database_id": "webhooks" },
     { "binding": "SIGNUP_DB", "database_name": "postflare-signup", "database_id": "signup" },
-    { "binding": "TURNSTILE_DB", "database_name": "postflare-turnstile", "database_id": "turnstile" }
+    { "binding": "TURNSTILE_DB", "database_name": "postflare-turnstile", "database_id": "turnstile" },
+    { "binding": "DEVICES_DB", "database_name": "postflare-devices", "database_id": "devices" },
+    { "binding": "PUSH_DB", "database_name": "postflare-push", "database_id": "push" },
+    { "binding": "APP_LOGIN_DB", "database_name": "postflare-app-login", "database_id": "app-login" }
   ],
   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "postflare-media" }],
   "workflows": [{ "name": "postflare-publish", "binding": "PUBLISH_WORKFLOW", "class_name": "PublishWorkflow" }]

@@ -534,6 +534,128 @@ export interface AuthStatusDTO {
    * `turnstileToken`, and sign-in too once the login answers `captchaRequired: true` (after 3 recent failures).
    */
   turnstileSiteKey?: string;
+  /**
+   * Present (true) when "Sign in with the iPhone app" is offered (docs/app-login-spec.md): the iOS app exists for this
+   * instance (APP_STORE_URL) or at least one device is signed in.
+   */
+  appLogin?: true;
+  /** Present (true) when "Send a request to my iPhone" works too: APNs configured and a device with push on. */
+  pushLogin?: true;
+  /** App Store page of the iOS app (APP_STORE_URL var): "Get the app". */
+  appStoreUrl?: string;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// iOS app (docs/ios-api.md)
+
+/** POST /api/auth/device and POST /api/auth/pair: the device token (Authorization: Bearer pfd_...) and the user. */
+export interface DeviceTokenDTO {
+  token: string;
+  /** devices.id of this install (GET /api/devices, `current`). */
+  deviceId: string;
+  user: { id: string; name: string; email: string; role: RoleRef };
+  instancePermissions: InstancePermission[];
+  /** Same list as GET /api/me `workspaces`; send `X-Workspace-Id` to act in one. */
+  workspaces: MeWorkspace[];
+  /** Workspace used when a request has no X-Workspace-Id (the pairing code's workspace, else the first one). */
+  currentWorkspaceId: string | null;
+  /** Public URL of the instance (use it as the API base). */
+  server: string;
+}
+
+/** Notification preferences of one device. */
+export interface DevicePrefsDTO {
+  /** A post was published (default on). */
+  published: boolean;
+  /** A post failed or needs a check (default on). */
+  failed: boolean;
+  /** Only these workspaces; null = all the user's workspaces. */
+  workspaces: string[] | null;
+}
+
+/** GET /api/devices `items`, PUT /api/devices/me, PATCH /api/devices/me/prefs. */
+export interface DeviceDTO {
+  id: string;
+  name: string | null;
+  /** An APNs token is registered (notifications on). */
+  push: boolean;
+  environment: "production" | "sandbox";
+  prefs: DevicePrefsDTO;
+  createdAt: number;
+  /** Last request made with the device token (updated at most every 10 minutes). */
+  lastSeenAt: number | null;
+  lastPushAt: number | null;
+  /** The device making the request. */
+  current?: true;
+}
+
+/** POST /api/pairing-codes: `url` is the QR payload (postflare://pair?s=<server>&c=<code>). */
+export interface PairingCodeDTO {
+  id: string;
+  /** 10 characters (A-Z without I/O, 2-9), shown as XXXXX-XXXXX; the app accepts it with or without the dash. */
+  code: string;
+  url: string;
+  expiresAt: number;
+}
+
+/** GET /api/pairing-codes/:id */
+export interface PairingStatusDTO {
+  status: "pending" | "used" | "expired";
+  /** Name of the device that used the code. */
+  deviceName: string | null;
+  expiresAt: number;
+}
+
+/** POST /api/auth/app-login: `qr` for kind qr, `number` for kind push. Keep `secret` in the page only. */
+export interface AppLoginStartDTO {
+  id: string;
+  secret: string;
+  qr?: string;
+  number?: number;
+  expiresAt: number;
+}
+
+/** GET /api/auth/app-login/:id (X-Login-Secret). `signed_in`: this response set the session cookie. */
+export interface AppLoginPollDTO {
+  status: "pending" | "approved" | "denied" | "consumed" | "expired" | "signed_in";
+  expiresAt: number;
+}
+
+/** POST /api/auth/app-login/:id/inspect (the app): what the approval sheet shows. */
+export interface AppLoginInspectDTO {
+  kind: "qr" | "push";
+  ip: string | null;
+  city: string | null;
+  country: string | null;
+  browser: string;
+  os: string;
+  /** Public URL of the instance: the app refuses requests for another server than its own. */
+  server: string;
+  createdAt: number;
+  expiresAt: number;
+  /** Push only: the number shown on the web page and two others, shuffled. */
+  numbers?: number[];
+}
+
+/** Post counts by status in a period (GET /api/overview `periods`). */
+export type PeriodCounts = Partial<Record<PostStatus, number>>;
+
+/** GET /api/overview: the dashboard (web) and the app's home screen. */
+export interface OverviewDTO {
+  /** Posts by status, all time. */
+  counts: Partial<Record<PostStatus, number>>;
+  /**
+   * By status, of posts whose time (published_at for published ones, else scheduled time or creation) falls in the
+   * period. Periods start at `todayStart` / `weekStart` (query parameters, ms; default: UTC midnight and UTC Monday).
+   */
+  periods: { today: PeriodCounts; week: PeriodCounts; todayStart: number; weekStart: number };
+  /** Being published, then scheduled, soonest first (10). */
+  upcoming: PostDTO[];
+  /** Latest results: published, failed, needs_check (10). */
+  recent: PostDTO[];
+  /** Latest failed and needs_check posts (5): what needs attention. */
+  failures: PostDTO[];
+  accounts: { total: number; reconnect: number };
 }
 
 /** GET / PUT / DELETE /api/admin/turnstile: bot protection (Cloudflare Turnstile). The secret is never returned. */
