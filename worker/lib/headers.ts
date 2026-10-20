@@ -2,7 +2,8 @@ import type { MiddlewareHandler } from "hono";
 import type { AppEnv } from "./auth";
 
 // Security headers. The Worker sets them on its own responses; pages served straight from static assets (the app
-// on every other path, /landing/, /privacy/, /terms/) get the same ones from public/_headers: keep both in sync.
+// on every other path, /landing/) get the same ones from public/_headers: keep both in sync. The legal pages
+// (/privacy/, /terms/, /data-deletion/) are rendered by the Worker with APP_CSP, the CSP their static fallbacks get.
 
 const COMMON = [
   "default-src 'self'",

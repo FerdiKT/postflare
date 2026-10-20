@@ -1,9 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useLocation } from "react-router";
-import { AlertTriangle, ArrowUpCircle, Bot, CheckCircle2, ExternalLink, FlaskConical, Globe, HardDrive, Info, Lock, Mail, RefreshCw, Send, ShieldCheck, Trash2, UserPlus } from "lucide-react";
+import { AlertTriangle, ArrowUpCircle, Bot, CheckCircle2, ExternalLink, FlaskConical, Globe, HardDrive, Info, Lock, Mail, RefreshCw, Scale, Send, ShieldCheck, Trash2, UserPlus } from "lucide-react";
 import { StorageUsage } from "../components/media/StorageUsage";
 import { Button } from "../components/ui/Button";
-import { Field, Input, Select, Switch } from "../components/ui/Form";
+import { Field, Input, Select, Switch, Textarea } from "../components/ui/Form";
 import { Badge, CodeBlock, PageHeader, Skeleton } from "../components/ui/Misc";
 import { useConfirm } from "../components/ui/Confirm";
 import { Section } from "../components/ui/Section";
@@ -16,9 +16,10 @@ import { useSession } from "../lib/session";
 import { invalidate, useFetch } from "../lib/useFetch";
 import { cn } from "../lib/format";
 import type { SignupMode } from "../lib/types";
+import type { AdminLegalDTO } from "@shared/types";
 import { CHANGELOG_URL, COMMIT, REPO_URL, UPDATING_URL, VERSION, releaseUrl } from "@shared/version";
 
-/** Admin → Instance settings: public URL and default timezone (API keys moved to the profile), integrations, sign-in links by email, sign-up mode, bot protection, version and updates. */
+/** Admin → Instance settings: public URL and default timezone (API keys moved to the profile), integrations, sign-in links by email, sign-up mode, bot protection, legal & contact, version and updates. */
 export function InstanceSettingsPage() {
   const { hash } = useLocation();
   // Links from the sidebar (#about, #updating) land on the section.
@@ -34,6 +35,7 @@ export function InstanceSettingsPage() {
         <EmailSection />
         <SignupSection />
         <TurnstileSection />
+        <LegalSection />
         <StorageSection />
         <AboutSection />
         <UpdatingSection />
@@ -694,6 +696,90 @@ function TurnstileSection() {
                 </Button>
               )}
             </div>
+          </form>
+        )}
+      </Section>
+    </div>
+  );
+}
+
+const EMPTY_LEGAL: AdminLegalDTO = { operatorName: null, contactEmail: null, postalAddress: null, country: null, effectiveDate: null };
+
+/** Who runs the instance: filled into /privacy/, /terms/ and /data-deletion/ (generic wording while empty). */
+function LegalSection() {
+  const toast = useToast();
+  const { data, setData } = useFetch("admin-legal", api.admin.legal, ["settings"]);
+  const [form, setForm] = useState<AdminLegalDTO>(EMPTY_LEGAL);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (data) setForm(data);
+  }, [data]);
+  const set = (key: keyof AdminLegalDTO) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [key]: e.target.value }));
+  const val = (key: keyof AdminLegalDTO) => form[key] ?? "";
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const res = await api.admin.saveLegal({
+        operatorName: val("operatorName"),
+        contactEmail: val("contactEmail"),
+        postalAddress: val("postalAddress"),
+        country: val("country"),
+        effectiveDate: val("effectiveDate"),
+      });
+      setData(() => res);
+      toast.success("Legal pages updated");
+    } catch (err) {
+      toast.error(err);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div id="legal" className="scroll-mt-6">
+      <Section
+        icon={<Scale />}
+        title="Legal & contact"
+        description="Who runs this instance and how to reach them, shown on the Privacy Policy, Terms of Service and Data Deletion pages."
+      >
+        {!data ? (
+          <Skeleton className="h-9 w-full max-w-xl" />
+        ) : (
+          <form onSubmit={save} className="max-w-xl space-y-5 text-sm">
+            <p className="text-zinc-600 dark:text-zinc-300">
+              While these are empty the pages use the generic self-host wording (&ldquo;contact its operator&rdquo;). Subscription terms appear only while billing is on. Preview:{" "}
+              <a className={linkClass} href="/privacy/" target="_blank" rel="noreferrer">
+                Privacy <ExternalLink className="size-3" />
+              </a>{" "}
+              ·{" "}
+              <a className={linkClass} href="/terms/" target="_blank" rel="noreferrer">
+                Terms <ExternalLink className="size-3" />
+              </a>{" "}
+              ·{" "}
+              <a className={linkClass} href="/data-deletion/" target="_blank" rel="noreferrer">
+                Data deletion <ExternalLink className="size-3" />
+              </a>
+            </p>
+            <Field label="Operator name" help="The person or company that runs this instance, e.g. “Jane Doe” or “Acme Ltd”.">
+              {(id) => <Input id={id} value={val("operatorName")} onChange={set("operatorName")} maxLength={200} placeholder="Jane Doe" />}
+            </Field>
+            <Field label="Contact email" help="For privacy questions, data deletion and support requests.">
+              {(id) => <Input id={id} type="email" value={val("contactEmail")} onChange={set("contactEmail")} maxLength={254} placeholder="privacy@example.com" />}
+            </Field>
+            <Field label="Postal address" help="Optional. Some laws and app reviews ask for one.">
+              {(id) => <Textarea id={id} rows={3} value={val("postalAddress")} onChange={set("postalAddress")} maxLength={500} />}
+            </Field>
+            <Field label="Country" help="Optional. Shown with the operator and used as the governing law of the Terms.">
+              {(id) => <Input id={id} value={val("country")} onChange={set("country")} maxLength={100} placeholder="Germany" />}
+            </Field>
+            <Field label="Effective date" help="Optional. Shown as “Last updated”; empty uses the date of the current wording.">
+              {(id) => <Input id={id} type="date" value={val("effectiveDate")} onChange={set("effectiveDate")} className="max-w-48" />}
+            </Field>
+            <Button type="submit" variant="primary" loading={busy}>
+              Save
+            </Button>
           </form>
         )}
       </Section>

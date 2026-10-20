@@ -312,6 +312,21 @@ first-run `POST /auth/setup`.
   error }`: siteverify with a dummy token. `invalid-input-response` means the secret is valid, `invalid-input-secret`
   that it is wrong; `testing: true` for a Turnstile test secret (always passes).
 
+## Legal pages
+
+`/privacy/`, `/terms/` and `/data-deletion/` are rendered by the Worker (`worker/lib/legal.ts`; `/privacy` etc. redirect
+with 307) with the operator's details below, the sign-up mode and, only while billing is on, the subscription terms
+(provider, trial, free plan, grace days). Without operator values they keep the generic self-host wording. One D1 query,
+`cache-control: public, max-age=300`, the app CSP. The paths must be in `assets.run_worker_first`; `public/` keeps
+the generic rendering as a fallback (`test/legal.test.ts` keeps it in sync).
+
+Instance admin (`instance.settings.manage`, Admin → Settings → Legal & contact):
+- `GET /admin/legal` → `AdminLegalDTO` `{ operatorName, contactEmail, postalAddress, country, effectiveDate }` (null =
+  not set). Settings keys `legal_operator_name`, `legal_contact_email`, `legal_postal_address`, `legal_country`,
+  `legal_effective_date`.
+- `PUT /admin/legal` (same shape, every key optional; `""` or null clears it) → `AdminLegalDTO`. 400 for an invalid email,
+  a date that is not `YYYY-MM-DD`, or values over 200 (name), 254 (email), 500 (address), 100 (country) characters.
+
 ## iOS app
 
 Full app-facing reference (request/response shapes, push payloads, loc keys): [ios-api.md](ios-api.md). Web sign-in

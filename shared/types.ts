@@ -677,6 +677,22 @@ export interface AdminTurnstileDTO {
 }
 
 /** Body of PUT /api/admin/turnstile: omitted or empty `secretKey` keeps the stored secret. */
+/**
+ * GET / PUT /api/admin/legal: who runs the instance, shown on /privacy/, /terms/ and /data-deletion/ (worker/lib/legal.ts).
+ * null = not set (the pages keep the generic wording). PUT takes the same shape; "" or null clears a value.
+ */
+export interface AdminLegalDTO {
+  /** A person or a company, e.g. "Jane Doe" or "Acme Ltd". */
+  operatorName: string | null;
+  contactEmail: string | null;
+  /** Optional, may span several lines. */
+  postalAddress: string | null;
+  /** Optional; also names the governing law in the Terms. */
+  country: string | null;
+  /** YYYY-MM-DD shown as "Last updated" (default: the date of the current wording). */
+  effectiveDate: string | null;
+}
+
 export interface AdminTurnstileInput {
   siteKey?: string;
   secretKey?: string;

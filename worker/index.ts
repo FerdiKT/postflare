@@ -25,6 +25,7 @@ import { campaignRedirect, campaignRoutes } from "./routes/campaigns";
 import { demoLogin, demoPage } from "./routes/demo";
 import { deviceRoutes } from "./routes/devices";
 import { invitationPublicRoutes, invitationRoutes } from "./routes/invitations";
+import { legalPages } from "./routes/legal";
 import { mcpRoutes } from "./routes/mcp";
 import { mediaRoutes, publicMedia } from "./routes/media";
 import { oauthRoutes } from "./routes/oauth";
@@ -116,6 +117,8 @@ app.get("/", async (c) => {
 });
 // Public live demo (DEMO_MODE=true): signs in as the demo user and opens the app.
 app.get("/demo", demoPage);
+// Privacy Policy, Terms of Service and Data Deletion with the operator's details (Admin → Settings → Legal & contact).
+app.route("/", legalPages);
 app.route("/api", api);
 app.route("/oauth", oauthRoutes);
 app.route("/m", publicMedia);

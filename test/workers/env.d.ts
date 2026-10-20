@@ -38,5 +38,7 @@ declare namespace Cloudflare {
     MEDIA_CDN_DB: D1Database;
     /** Own instance for access requests (/apply): sign-up modes, review, invitations, admin push and emails. */
     ACCESS_DB: D1Database;
+    /** Own instance for the legal pages (/privacy/, /terms/, /data-deletion/) and Admin → Settings → Legal & contact. */
+    LEGAL_DB: D1Database;
   }
 }

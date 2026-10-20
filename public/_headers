@@ -1,5 +1,6 @@
-# Security headers of static assets (the app on every path, landing/privacy/terms pages). Responses of the Worker
-# get theirs from worker/lib/headers.ts: keep both in sync. The app allows Cloudflare Turnstile (script + iframe).
+# Security headers of static assets (the app on every path, the landing page, and the fallback privacy/terms/data
+# deletion pages). Responses of the Worker get theirs from worker/lib/headers.ts: keep both in sync. The Worker renders
+# /privacy/, /terms/ and /data-deletion/ with this "/*" CSP (APP_CSP). The app allows Cloudflare Turnstile (script + iframe).
 /*
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin

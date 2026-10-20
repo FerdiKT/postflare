@@ -1,7 +1,8 @@
 import { Hono } from "hono";
-import type { AdminEmailDTO, AdminTurnstileDTO, AdminTurnstileInput, TurnstileTestDTO } from "../../shared/types";
+import type { AdminEmailDTO, AdminLegalDTO, AdminTurnstileDTO, AdminTurnstileInput, TurnstileTestDTO } from "../../shared/types";
 import { adminOverview } from "../lib/admin-overview";
 import { requireInstancePermission, type AppEnv } from "../lib/auth";
+import { LEGAL_SETTING, legalFromRows, parseLegalInput } from "../lib/legal";
 import { MAGIC_LINK_SETTING, emailConfigured, sendEmail, testEmail } from "../lib/email";
 import { baseUrl, getSetting, setSetting } from "../lib/settings";
 import { saveTurnstileConfig, testTurnstileSecret, turnstileConfig, validTurnstileKey } from "../lib/turnstile";
@@ -92,4 +93,28 @@ adminRoutes.post("/admin/turnstile/test", manageSettings, async (c) => {
   if (!secret) return c.json({ error: cfg.secretSet ? "The stored secret key cannot be decrypted (SECRET_KEY changed?): enter it again" : "Enter the secret key first" }, 400);
   const out: TurnstileTestDTO = await testTurnstileSecret(secret);
   return c.json(out);
+});
+
+// ---------- Legal & contact: the operator shown on /privacy/, /terms/ and /data-deletion/ (worker/lib/legal.ts) ----------
+
+async function legalState(db: D1Database): Promise<AdminLegalDTO> {
+  const keys = Object.values(LEGAL_SETTING);
+  const { results } = await db.prepare(`SELECT key, value FROM settings WHERE key IN (${keys.map(() => "?").join(", ")})`).bind(...keys).all<{ key: string; value: string }>();
+  return legalFromRows(new Map(results.map((r) => [r.key, r.value])));
+}
+
+adminRoutes.get("/admin/legal", manageSettings, async (c) => c.json(await legalState(c.env.DB)));
+
+/** PUT /api/admin/legal {operatorName?, contactEmail?, postalAddress?, country?, effectiveDate?}: "" or null clears a value. */
+adminRoutes.put("/admin/legal", manageSettings, async (c) => {
+  const parsed = parseLegalInput(await c.req.json().catch(() => null));
+  if ("error" in parsed) return c.json({ error: parsed.error }, 400);
+  const db = c.env.DB;
+  const statements = (Object.entries(parsed.values) as [keyof AdminLegalDTO, string | null][]).map(([key, value]) =>
+    value === null
+      ? db.prepare("DELETE FROM settings WHERE key = ?").bind(LEGAL_SETTING[key])
+      : db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(LEGAL_SETTING[key], value),
+  );
+  if (statements.length) await db.batch(statements);
+  return c.json(await legalState(db));
 });

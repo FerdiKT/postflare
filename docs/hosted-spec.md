@@ -262,7 +262,9 @@ Instance admin (`instance.settings.manage`):
   sales" radio), plans table with editor (limits form, prices, provider product ids per provider, free/trial default,
   highlight, archive), trial days and grace days, "Create suggested plans".
 - **Admin → Settings**: "Sign-up" card (Invitation only / Request access / Open sign-up, warnings without email or
-  bot protection). **Admin → Requests**: access requests.
+  bot protection). "Legal & contact" card: operator name, contact email, optional postal address, country and
+  effective date, filled into `/privacy/` and `/terms/` (rendered by the Worker); the subscription clauses (merchant of
+  record, trial, renewal, cancellation, refunds, price changes, free plan) appear there only while billing is on. **Admin → Requests**: access requests.
 - **Workspace settings → Billing** tab: current plan + status badge, trial countdown, usage meters vs limits,
   pricing cards with month/year switch → checkout redirect, "Manage billing" → portal, return URLs
   `/workspace?tab=billing&checkout=success|canceled` (success shows "Payment received, your plan updates in a moment"

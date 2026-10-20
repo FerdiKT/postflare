@@ -380,7 +380,7 @@ Results show in the post drawer, Analytics (installs, proceeds and revenue per p
 posts by installs or revenue) and the playbook ranking (rank by installs or revenue). Apple's numbers lag 2–3 days,
 small numbers (fewer than 5 users) are withheld, and proceeds are Apple's estimate. API: [docs/api.md](docs/api.md).
 
-**Deploying**: `/a/*` must run the Worker first (`assets.run_worker_first` in `wrangler.jsonc`; mirror it in your
+**Deploying**: `/a/*` (and the legal pages `/privacy/`, `/terms/`, `/data-deletion/`, which show your details from Admin → Settings → Legal & contact) must run the Worker first (`assets.run_worker_first` in `wrangler.jsonc`; mirror it in your
 `wrangler.local.jsonc`). If you use a Cloudflare rate-limiting rule for the instance, exclude `/a/` like `/m/`, `/u/`
 and `/oauth/`: link clicks come from many visitors behind shared IPs, and the route is cheap (one D1 read and one
 upsert per click).

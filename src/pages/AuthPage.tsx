@@ -473,6 +473,18 @@ export function AuthShell({
           {children}
         </div>
         {footer}
+        <nav aria-label="Legal" className="mt-6 flex justify-center gap-4 text-xs text-zinc-500 dark:text-zinc-400">
+          {/* Server-rendered pages (operator details), not SPA routes: plain links. */}
+          <a href="/privacy/" className="hover:text-zinc-700 hover:underline dark:hover:text-zinc-200">
+            Privacy Policy
+          </a>
+          <a href="/terms/" className="hover:text-zinc-700 hover:underline dark:hover:text-zinc-200">
+            Terms of Service
+          </a>
+          <a href="/data-deletion/" className="hover:text-zinc-700 hover:underline dark:hover:text-zinc-200">
+            Data Deletion
+          </a>
+        </nav>
       </div>
     </div>
   );
