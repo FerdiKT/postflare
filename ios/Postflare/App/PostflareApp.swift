@@ -149,6 +149,8 @@ extension View {
             case let .post(id): PostDetailView(postId: id)
             case .notifications: NotificationSettingsView()
             case .devices: DevicesView()
+            case .accessRequests: AccessRequestsView()
+            case let .accessRequest(id): AccessRequestDetailView(requestId: id)
             }
         }
     }

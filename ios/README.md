@@ -98,7 +98,7 @@ time, and approves with Face ID / Touch ID or the passcode (LocalAuthentication)
 ## Deep links
 
 `postflare://home`, `posts[/list|/calendar]`, `calendar`, `post/<id>`, `compose` (`?duplicate=<post id>`),
-`accounts`, `analytics`, `settings[/notifications|/devices]`, `notifications`, `pair?...`, `web-login?...`.
+`accounts`, `analytics`, `settings[/notifications|/devices|/access-requests[/<id>]]`, `notifications`, `pair?...`, `web-login?...`.
 
 Debug builds accept `-PFOpenURL <url>` (open a deep link at launch) and `-PFSkipPushPrompt YES` for simulator
 automation, e.g. `xcrun simctl launch booted com.example.postflare -PFOpenURL postflare://posts -PFSkipPushPrompt YES`.
@@ -123,7 +123,18 @@ failed / needs check, workspace filter) go to `PATCH /devices/me/prefs`; Setting
 Server side: set `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_PRIVATE_KEY` and **`APNS_TOPIC` = your bundle id**
 (`POSTFLARE_BUNDLE_ID`), see the root README "iOS app → Push notifications (APNs)". The bundle id needs the Push
 Notifications capability (automatic signing adds it). Tapping `post_published`, `post_failed` or `post_needs_check`
-switches to the post's workspace and opens the post; `web_login` opens the approval sheet; `test` does nothing.
+switches to the post's workspace and opens the post; `web_login` opens the approval sheet; `access_request` (`id`)
+opens Settings → Access requests → that request; `test` does nothing.
+
+## Access requests
+
+Instance admins (`instance.users.manage` in `instancePermissions`) get Settings → **Access requests** (pending count
+from `GET /access-requests/count` as the badge): the people who asked for an account on the web (`/apply`), filtered by
+status (pending, all, approved, rejected), searchable, 50 per page (`nextBefore`). The detail shows everything they
+sent; **Approve** (`PATCH /access-requests/:id { status: "approved" }`) shows the invitation link (copy, share) and
+whether it was emailed, or that the email already has an account; **Reject** takes an optional note and "Email the
+applicant". An approved request whose invitation is unused offers **New invite link** (the old one stops working).
+The `accessRequests` device pref (Settings → Notifications, admins only) turns their pushes on or off.
 
 ## Release (TestFlight)
 

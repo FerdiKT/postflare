@@ -10,6 +10,8 @@ enum Route: Hashable {
     case post(id: String)
     case notifications
     case devices
+    case accessRequests
+    case accessRequest(id: String)
 }
 
 /// What the composer opens with: empty, or a copy of a post (Duplicate).
@@ -72,6 +74,8 @@ final class AppModel {
 
     func can(_ permission: String) -> Bool { workspace?.can(permission) ?? false }
     var canWrite: Bool { can("posts.write") }
+    /// Instance admin: reviews access requests (`instance.users.manage`).
+    var canManageUsers: Bool { me?.can("instance.users.manage") ?? false }
 
     func account(_ id: String) -> Account? { accounts.first { $0.id == id } }
     func provider(_ id: String) -> ProviderInfo? { providers.first { $0.id == id } }
@@ -287,13 +291,25 @@ final class AppModel {
             tab = .analytics
         case "settings":
             tab = .settings
-            settingsPath = parts.first == "notifications" ? [.notifications] : parts.first == "devices" ? [.devices] : []
+            switch parts.first {
+            case "notifications": settingsPath = [.notifications]
+            case "devices": settingsPath = [.devices]
+            case "access-requests" where canManageUsers:
+                settingsPath = [.accessRequests] + (parts.dropFirst().first.map { [.accessRequest(id: $0)] } ?? [])
+            default: settingsPath = []
+            }
         case "notifications":
             tab = .settings
             settingsPath = [.notifications]
         default:
             break
         }
+    }
+
+    /// Settings → Access requests → the request.
+    func openAccessRequest(_ id: String) {
+        tab = .settings
+        settingsPath = [.accessRequests, .accessRequest(id: id)]
     }
 
     func openPost(_ id: String) {
@@ -369,12 +385,16 @@ final class AppModel {
 
     // MARK: Notifications
 
-    /// Notification tap: `type` (post_published | post_failed | post_needs_check | web_login | test), `postId`,
+    /// Notification tap: `type` (post_published | post_failed | post_needs_check | web_login | access_request | test), `postId`,
     /// `workspaceId`, `id` from the payload.
     func openNotification(_ info: [String: String]) async {
         switch info["type"] {
         case "web_login":
             if let id = info["id"], id.hasPrefix("wl_") { pendingWebLogin = WebLoginRequest(id: id) }
+        case "access_request":
+            guard phase == .signedIn, let id = info["id"] else { return }
+            openAccessRequest(id)
+            dataChanged()
         case "post_published", "post_failed", "post_needs_check":
             guard phase == .signedIn, let postId = info["postId"] else { return }
             if let wsId = info["workspaceId"], wsId != client?.workspaceId {

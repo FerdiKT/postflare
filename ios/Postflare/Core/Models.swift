@@ -94,6 +94,8 @@ struct Me: Codable, Sendable {
     var instancePermissions: [String]
     var workspaces: [Workspace]
     var currentWorkspaceId: String?
+
+    func can(_ permission: String) -> Bool { instancePermissions.contains(permission) }
 }
 
 /// POST /api/auth/device and POST /api/auth/pair.
@@ -120,6 +122,8 @@ struct AuthStatus: Codable, Sendable {
     var appLogin: Bool?
     var pushLogin: Bool?
     var appStoreUrl: String?
+    /// off | apply ("Request access" on /apply) | open ("Create an account").
+    var signupMode: String?
 }
 
 /// GET /api/version.
@@ -134,12 +138,15 @@ struct ServerVersion: Codable, Sendable {
 struct DevicePrefs: Codable, Hashable, Sendable {
     var published = true
     var failed = true
+    /// Instance admins (`instance.users.manage`): a new access request arrived.
+    var accessRequests = true
     /// nil = all the user's workspaces.
     var workspaces: [String]?
 
-    init(published: Bool = true, failed: Bool = true, workspaces: [String]? = nil) {
+    init(published: Bool = true, failed: Bool = true, accessRequests: Bool = true, workspaces: [String]? = nil) {
         self.published = published
         self.failed = failed
+        self.accessRequests = accessRequests
         self.workspaces = workspaces
     }
 
@@ -147,6 +154,7 @@ struct DevicePrefs: Codable, Hashable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         published = try c.decodeIfPresent(Bool.self, forKey: .published) ?? true
         failed = try c.decodeIfPresent(Bool.self, forKey: .failed) ?? true
+        accessRequests = try c.decodeIfPresent(Bool.self, forKey: .accessRequests) ?? true
         workspaces = try c.decodeIfPresent([String].self, forKey: .workspaces)
     }
 
@@ -155,10 +163,11 @@ struct DevicePrefs: Codable, Hashable, Sendable {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(published, forKey: .published)
         try c.encode(failed, forKey: .failed)
+        try c.encode(accessRequests, forKey: .accessRequests)
         try c.encode(workspaces, forKey: .workspaces)
     }
 
-    private enum CodingKeys: String, CodingKey { case published, failed, workspaces }
+    private enum CodingKeys: String, CodingKey { case published, failed, accessRequests, workspaces }
 }
 
 struct Device: Codable, Hashable, Identifiable, Sendable {
@@ -201,6 +210,106 @@ struct WebLoginInfo: Codable, Hashable, Sendable {
         let parts = [city, country].compactMap { $0?.isEmpty == false ? $0 : nil }
         return parts.isEmpty ? nil : parts.joined(separator: ", ")
     }
+}
+
+// MARK: - Access requests
+
+/// GET /api/access-requests[/:id] (instance.users.manage): someone asking for an account on /apply.
+struct AccessRequest: Codable, Hashable, Identifiable, Sendable {
+    struct Reviewer: Codable, Hashable, Sendable {
+        var id: String
+        var name: String
+    }
+
+    var id: String
+    var name: String
+    var email: String
+    var company: String?
+    var url: String
+    /// creator | agency | startup | brand | other
+    var role: String
+    /// x | instagram | tiktok | youtube | linkedin | facebook | threads | bluesky | pinterest | other
+    var platforms: [String]
+    var accounts: Int?
+    /// 1-30 | 31-100 | 101-300 | 301-1000 | 1000+
+    var volume: String?
+    var useCase: String
+    var referral: String?
+    /// pending | approved | rejected | withdrawn
+    var status: String
+    var ip: String?
+    /// Two-letter country code.
+    var country: String?
+    var userAgent: String?
+    var createdAt: Double
+    var updatedAt: Double
+    var reviewedBy: Reviewer?
+    var reviewedAt: Double?
+    var reviewNote: String?
+    var invitationId: String?
+    /// The applicant signed up with the invitation.
+    var invitationAccepted: Bool
+    /// An account with this email exists on the instance.
+    var existingUser: Bool
+
+    var isPending: Bool { status == "pending" }
+    var isApproved: Bool { status == "approved" }
+    var isRejected: Bool { status == "rejected" }
+    var website: URL? { URL(string: url).flatMap { $0.host() == nil ? nil : $0 } }
+    /// The company, else the website's host.
+    var organization: String {
+        if let company, !company.trimmingCharacters(in: .whitespaces).isEmpty { return company }
+        return website?.host().map { $0.hasPrefix("www.") ? String($0.dropFirst(4)) : $0 } ?? url
+    }
+}
+
+struct AccessRequestCounts: Codable, Hashable, Sendable {
+    var pending = 0
+    var approved = 0
+    var rejected = 0
+    var withdrawn = 0
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        pending = try c.decodeIfPresent(Int.self, forKey: .pending) ?? 0
+        approved = try c.decodeIfPresent(Int.self, forKey: .approved) ?? 0
+        rejected = try c.decodeIfPresent(Int.self, forKey: .rejected) ?? 0
+        withdrawn = try c.decodeIfPresent(Int.self, forKey: .withdrawn) ?? 0
+    }
+
+    private enum CodingKeys: String, CodingKey { case pending, approved, rejected, withdrawn }
+}
+
+/// GET /api/access-requests
+struct AccessRequestList: Codable, Sendable {
+    var items: [AccessRequest]
+    var counts: AccessRequestCounts
+    /// `before` of the next page; nil = no more.
+    var nextBefore: Double?
+}
+
+/// GET /api/access-requests/count
+struct AccessRequestPendingCount: Codable, Sendable {
+    var pending: Int
+}
+
+struct CreatedInvitation: Codable, Hashable, Sendable {
+    var id: String
+    var url: String
+    var expiresAt: Double
+}
+
+/// PATCH /api/access-requests/:id
+struct AccessRequestReview: Codable, Hashable, Sendable {
+    var request: AccessRequest
+    /// Approved: the invitation link. Absent when the email already has an account.
+    var invitation: CreatedInvitation?
+    /// Approved, but the email already has an account: only marked approved.
+    var existingUser: Bool?
+    /// An email went to the applicant.
+    var emailed: Bool
 }
 
 // MARK: - Posts

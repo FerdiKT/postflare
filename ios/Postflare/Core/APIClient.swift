@@ -294,6 +294,28 @@ extension APIClient {
     func deleteDevice(_ id: String) async throws { _ = try await send("DELETE", "/devices/\(id)", as: IgnoredResponse.self) }
     func testPush() async throws { _ = try await send("POST", "/devices/me/test", as: IgnoredResponse.self) }
 
+    // Access requests (instance.users.manage): people asking for an account on /apply.
+    /// `status`: pending | approved | rejected | withdrawn | all.
+    func accessRequests(status: String, query: String? = nil, limit: Int = 50, before: Double? = nil) async throws -> AccessRequestList {
+        try await get("/access-requests", query: [
+            "status": status, "q": query.flatMap { $0.isEmpty ? nil : $0 },
+            "limit": String(limit), "before": before.map { String(Int64($0)) },
+        ])
+    }
+
+    func pendingAccessRequests() async throws -> Int {
+        let r: AccessRequestPendingCount = try await get("/access-requests/count")
+        return r.pending
+    }
+
+    func accessRequest(_ id: String) async throws -> AccessRequest { try await get("/access-requests/\(id)") }
+
+    /// Approves (a new invitation link each time while it is unused) or rejects; `notify` emails the applicant.
+    func reviewAccessRequest(_ id: String, approve: Bool, note: String? = nil, notify: Bool = true) async throws -> AccessRequestReview {
+        struct Body: Encodable { var status: String; var note: String?; var notify: Bool }
+        return try await send("PATCH", "/access-requests/\(id)", body: Body(status: approve ? "approved" : "rejected", note: note, notify: notify))
+    }
+
     // Signing a browser in (docs/app-login-spec.md): `nonce` from a QR code, `number` for push requests.
     private struct WebLoginAnswer: Encodable { var nonce: String?; var number: Int? }
 

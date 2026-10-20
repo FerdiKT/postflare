@@ -9,6 +9,7 @@ struct SettingsView: View {
     @State private var scanned: String?
     @State private var scanError: String?
     @State private var serverVersion: String?
+    @State private var pendingRequests: Int?
 
     var body: some View {
         Form {
@@ -84,6 +85,19 @@ struct SettingsView: View {
                 Text("On the Postflare sign-in page, choose Sign in with the iPhone app and scan the code.")
             }
 
+            if model.canManageUsers {
+                Section {
+                    NavigationLink(value: Route.accessRequests) {
+                        Label("Access requests", systemImage: "person.crop.circle.badge.questionmark")
+                    }
+                    .badge(pendingRequests ?? 0)
+                } header: {
+                    Text("Instance")
+                } footer: {
+                    Text("People who asked for an account on the web.")
+                }
+            }
+
             Section("Server") {
                 LabeledContent {
                     Text(model.serverURL?.host() ?? "—")
@@ -129,6 +143,10 @@ struct SettingsView: View {
         .task {
             await push.refreshAuthorization()
             if serverVersion == nil, let v = try? await model.client?.version() { serverVersion = v.version }
+        }
+        .task(id: "\(model.canManageUsers)#\(model.dataVersion)") {
+            guard model.canManageUsers, let client = model.client else { return }
+            if let n = try? await client.pendingAccessRequests() { pendingRequests = n }
         }
         .refreshable { await model.refreshMe() }
     }
@@ -203,6 +221,9 @@ struct NotificationSettingsView: View {
             Section {
                 Toggle(isOn: $prefs.published) { Label("Published posts", systemImage: "checkmark.circle") }
                 Toggle(isOn: $prefs.failed) { Label("Failed posts and checks", systemImage: "exclamationmark.triangle") }
+                if model.canManageUsers {
+                    Toggle(isOn: $prefs.accessRequests) { Label("Access requests", systemImage: "person.crop.circle.badge.questionmark") }
+                }
             } header: {
                 Text("Notify me about")
             } footer: {
