@@ -113,6 +113,21 @@ struct SettingsView: View {
                 }
             }
 
+            // The server's own pages: they carry its operator's details (Admin → Settings → Legal & contact).
+            if let url = model.serverURL {
+                Section("About") {
+                    Link(destination: url.appending(path: "privacy/")) {
+                        Label("Privacy Policy", systemImage: "hand.raised")
+                    }
+                    Link(destination: url.appending(path: "terms/")) {
+                        Label("Terms of Service", systemImage: "doc.text")
+                    }
+                    Link(destination: url.appending(path: "data-deletion/")) {
+                        Label("Data Deletion", systemImage: "trash")
+                    }
+                }
+            }
+
             Section {
                 Button(role: .destructive) {
                     confirmSignOut = true
