@@ -29,7 +29,7 @@ beforeAll(async () => {
   member = { cookie: login.cookie! };
 });
 
-const LEGAL = { operatorName: "Ferdi Kızıltoprak", contactEmail: "postflare@ferdi.app", postalAddress: null, country: "Türkiye", effectiveDate: null };
+const LEGAL = { operatorName: "Ada Operator", contactEmail: "legal@example.com", postalAddress: null, country: "Türkiye", effectiveDate: null };
 
 describe("legal pages", () => {
   it("serve the generic wording without operator values, with the static assets' security headers", async () => {
@@ -64,10 +64,10 @@ describe("legal pages", () => {
     expect(put.status, put.text).toBe(200);
     expect(put.json).toEqual(LEGAL);
     const privacy = (await call(null, "/privacy/")).text;
-    expect(text(privacy)).toContain("operated by Ferdi Kızıltoprak, Türkiye (“the operator”)");
-    expect(privacy).toContain("mailto:postflare@ferdi.app");
+    expect(text(privacy)).toContain("operated by Ada Operator, Türkiye (“the operator”)");
+    expect(privacy).toContain("mailto:legal@example.com");
     expect(text((await call(null, "/terms/")).text)).toContain("governed by the laws of Türkiye");
-    expect((await call(null, "/data-deletion/")).text).toContain("mailto:postflare@ferdi.app");
+    expect((await call(null, "/data-deletion/")).text).toContain("mailto:legal@example.com");
   });
 
   it("describe applications and subscriptions only when the instance uses them", async () => {

@@ -26,7 +26,7 @@ const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " "
 
 const HOSTED: LegalContext = {
   host: "postflare.example.com",
-  legal: { operatorName: "Ferdi Kızıltoprak", contactEmail: "postflare@ferdi.app", postalAddress: null, country: "Türkiye", effectiveDate: null },
+  legal: { operatorName: "Ada Operator", contactEmail: "legal@example.com", postalAddress: null, country: "Türkiye", effectiveDate: null },
   signupMode: "apply",
   billing: { provider: "polar", trialDays: 7, trialPlan: "Creator", freePlan: true, graceDays: 7 },
   mediaRetentionDays: 30,
@@ -58,8 +58,8 @@ describe("privacy policy", () => {
   it("with the operator and billing: identity, contact, Polar, access requests", () => {
     const html = renderPrivacy(HOSTED);
     const t = text(html);
-    expect(t).toContain("This Postflare instance at postflare.example.com is operated by Ferdi Kızıltoprak, Türkiye (“the operator”)");
-    expect(html).toContain('<a href="mailto:postflare@ferdi.app">postflare@ferdi.app</a>');
+    expect(t).toContain("This Postflare instance at postflare.example.com is operated by Ada Operator, Türkiye (“the operator”)");
+    expect(html).toContain('<a href="mailto:legal@example.com">legal@example.com</a>');
     expect(t).toContain("sold by Polar as merchant of record");
     expect(t).toContain("never receives or stores card data");
     expect(t).toContain("Access requests:");
@@ -89,7 +89,7 @@ describe("terms of service", () => {
 
   it("billing on: Polar, trial, renewal, cancellation, refunds, price changes, free plan", () => {
     const t = text(renderTerms(HOSTED));
-    expect(t).toContain("operated by Ferdi Kızıltoprak, Türkiye");
+    expect(t).toContain("operated by Ada Operator, Türkiye");
     expect(t).toContain("Access is by application");
     expect(t).toContain("sold by Polar , which acts as merchant of record");
     expect(t).toContain("free 7-day trial of the Creator plan, without a payment card");
@@ -114,7 +114,7 @@ describe("data deletion", () => {
   it("keeps the status script and shows the contact email when set", () => {
     expect(renderDataDeletion(STATIC_CONTEXT)).toContain('<script src="/data-deletion/status.js" defer></script>');
     expect(renderDataDeletion(STATIC_CONTEXT)).toContain('id="status-text"');
-    expect(renderDataDeletion(HOSTED)).toContain("mailto:postflare@ferdi.app");
+    expect(renderDataDeletion(HOSTED)).toContain("mailto:legal@example.com");
     expect(renderDataDeletion(STATIC_CONTEXT)).toContain("contact the operator of this Postflare instance");
   });
 });
