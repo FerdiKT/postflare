@@ -1,4 +1,11 @@
 import type {
+  AccessRequestDTO,
+  AccessRequestInput,
+  AccessRequestListDTO,
+  AccessRequestReviewDTO,
+  AccessRequestReviewInput,
+  AccessRequestStatus,
+  SignupMode,
   AccountDTO,
   AccountGroupDTO,
   AccountGroupInput,
@@ -204,6 +211,8 @@ export const api = {
     verifyMagicLink: (token: string) => request<{ ok: true }>("POST", "/auth/magic-link/verify", { token }),
     signup: (input: SignupInput) => request<SignupDTO>("POST", "/auth/signup", input),
     verifySignup: (token: string) => request<{ ok: true; workspaceId: string }>("POST", "/auth/signup/verify", { token }),
+    /** "Request access" (/apply, signup_mode apply): `{ ok }` whether or not the email applied before. */
+    apply: (input: AccessRequestInput) => request<{ ok: true }>("POST", "/access-requests", input),
     /** Sign in with the iOS app (docs/app-login-spec.md): the secret stays in the page and proves this browser. */
     appLogin: {
       start: (body: { kind: "qr" } | { kind: "push"; email: string; turnstileToken?: string }) => request<AppLoginStartDTO>("POST", "/auth/app-login", body),
@@ -252,6 +261,13 @@ export const api = {
     list: () => get<UserDTO[]>("/users"),
     update: (id: string, body: { roleId?: string; status?: UserStatus; name?: string }) => request<UserDTO>("PATCH", `/users/${id}`, body),
     remove: (id: string) => request<{ ok: true }>("DELETE", `/users/${id}`),
+  },
+  /** Admin → Requests (instance.users.manage). */
+  accessRequests: {
+    list: (q: { status?: AccessRequestStatus | "all"; q?: string; limit?: number; before?: number } = {}) => get<AccessRequestListDTO>(`/access-requests${qs(q)}`),
+    count: () => get<{ pending: number }>("/access-requests/count"),
+    get: (id: string) => get<AccessRequestDTO>(`/access-requests/${encodeURIComponent(id)}`),
+    review: (id: string, input: AccessRequestReviewInput) => request<AccessRequestReviewDTO>("PATCH", `/access-requests/${encodeURIComponent(id)}`, input),
   },
   invitations: {
     create: (input: CreateInvitationInput) => request<CreatedInvitationDTO>("POST", "/invitations", input),
@@ -350,7 +366,7 @@ export const api = {
     setEmail: (enabled: boolean) => request<AdminEmailDTO>("PATCH", "/admin/email", { enabled }),
     testEmail: () => request<{ ok: true; to: string }>("POST", "/admin/email/test", {}),
     signup: () => get<AdminSignupDTO>("/admin/signup"),
-    setSignup: (enabled: boolean) => request<AdminSignupDTO>("PATCH", "/admin/signup", { enabled }),
+    setSignup: (mode: SignupMode) => request<AdminSignupDTO>("PATCH", "/admin/signup", { mode }),
     turnstile: () => get<AdminTurnstileDTO>("/admin/turnstile"),
     saveTurnstile: (input: AdminTurnstileInput) => request<AdminTurnstileDTO>("PUT", "/admin/turnstile", input),
     removeTurnstile: () => request<AdminTurnstileDTO>("DELETE", "/admin/turnstile"),

@@ -14,9 +14,11 @@ import { browserTimezone, timezones } from "../lib/time";
 import { useUpdateStatus } from "../lib/updates";
 import { useSession } from "../lib/session";
 import { invalidate, useFetch } from "../lib/useFetch";
+import { cn } from "../lib/format";
+import type { SignupMode } from "../lib/types";
 import { CHANGELOG_URL, COMMIT, REPO_URL, UPDATING_URL, VERSION, releaseUrl } from "@shared/version";
 
-/** Admin → Instance settings: public URL and default timezone (API keys moved to the profile), integrations, sign-in links by email, public sign-up, bot protection, version and updates. */
+/** Admin → Instance settings: public URL and default timezone (API keys moved to the profile), integrations, sign-in links by email, sign-up mode, bot protection, version and updates. */
 export function InstanceSettingsPage() {
   const { hash } = useLocation();
   // Links from the sidebar (#about, #updating) land on the section.
@@ -412,19 +414,31 @@ function EmailSection() {
   );
 }
 
-/** Public sign-up (hosted mode, off by default): anyone can create an account and gets their own workspace. */
+const SIGNUP_MODES: Array<{ mode: SignupMode; title: string; text: string }> = [
+  { mode: "off", title: "Invitation only", text: "Only people you invite get an account. The sign-in page offers no sign-up." },
+  {
+    mode: "apply",
+    title: "Request access",
+    text: "People apply on /apply with their details and use case. You approve each one in Admin → Requests: they get an invitation into a workspace of their own.",
+  },
+  { mode: "open", title: "Open sign-up", text: "Anyone can create an account on /signup and gets the Member role and a workspace of their own." },
+];
+
+/** Sign-up (off by default): invitation only, request access (reviewed by an admin), or open public sign-up. */
 function SignupSection() {
   const toast = useToast();
   const { data, setData } = useFetch("admin-signup", api.admin.signup, ["settings"]);
   const turnstile = useFetch("admin-turnstile", api.admin.turnstile, ["settings"]);
   const [busy, setBusy] = useState(false);
 
-  async function toggle(next: boolean) {
+  async function choose(mode: SignupMode) {
+    if (mode === data?.mode) return;
     setBusy(true);
     try {
-      const res = await api.admin.setSignup(next);
+      const res = await api.admin.setSignup(mode);
       setData(() => res);
-      toast.success(next ? "Public sign-up turned on" : "Public sign-up turned off");
+      invalidate("requests");
+      toast.success(mode === "off" ? "Sign-up is invitation only" : mode === "apply" ? "People can now request access" : "Public sign-up turned on");
     } catch (err) {
       toast.error(err);
     } finally {
@@ -434,24 +448,44 @@ function SignupSection() {
 
   return (
     <div id="signup" className="scroll-mt-6">
-      <Section icon={<UserPlus />} title="Public sign-up" description="Let anyone create an account. Each new user gets the Member role and a workspace of their own.">
+      <Section icon={<UserPlus />} title="Sign-up" description="How new people get an account on this instance.">
         {!data ? (
           <Skeleton className="h-9 w-full max-w-xl" />
         ) : (
           <div className="max-w-xl space-y-4 text-sm">
-            <label className="flex items-start gap-3">
-              <Switch id="signup-enabled" checked={data.enabled} disabled={busy} onChange={toggle} label="Public sign-up" />
-              <span>
-                <span className="block font-medium text-zinc-900 dark:text-zinc-100">Show &ldquo;Create an account&rdquo; on the sign-in page</span>
-                <span className="mt-0.5 block text-zinc-500">
-                  {data.emailConfigured
+            <div role="radiogroup" aria-label="Sign-up" className="space-y-2">
+              {SIGNUP_MODES.map((m) => (
+                <label
+                  key={m.mode}
+                  className={cn(
+                    "flex cursor-pointer items-start gap-3 rounded-lg p-3 ring-1 transition",
+                    data.mode === m.mode ? "bg-brand-50/60 ring-brand-300 dark:bg-brand-500/10 dark:ring-brand-500/40" : "ring-zinc-200 hover:bg-zinc-50 dark:ring-zinc-800 dark:hover:bg-zinc-800/40",
+                    busy && "cursor-wait opacity-70",
+                  )}
+                >
+                  <input type="radio" name="signup-mode" className="mt-0.5 accent-brand-600" checked={data.mode === m.mode} disabled={busy} onChange={() => void choose(m.mode)} />
+                  <span>
+                    <span className="block font-medium text-zinc-900 dark:text-zinc-100">{m.title}</span>
+                    <span className="mt-0.5 block text-zinc-500">{m.text}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <p className="text-zinc-500">
+              {data.mode === "apply"
+                ? `At most 5 requests per network per hour and 3 per email per day. Instance admins get a push on the iPhone app${data.emailConfigured ? " and an email" : ""} for each new request.`
+                : data.mode === "open"
+                  ? data.emailConfigured
                     ? "New accounts confirm their email address with a link that works for 24 hours. At most 5 sign-ups per network per hour."
-                    : "Accounts are active right away (no email confirmation). At most 5 sign-ups per network per hour."}{" "}
+                    : "Accounts are active right away (no email confirmation). At most 5 sign-ups per network per hour."
+                  : "Invite people from Admin → Users."}{" "}
+              {data.mode !== "off" && (
+                <>
                   With <Link to="/admin/billing" className={linkClass}>billing</Link> on, new workspaces start a free trial.
-                </span>
-              </span>
-            </label>
-            {!data.emailConfigured && (
+                </>
+              )}
+            </p>
+            {data.mode === "open" && !data.emailConfigured && (
               <p className="flex gap-2 rounded-lg bg-amber-50 px-3 py-2 text-amber-900 ring-1 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:ring-amber-900">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0" />
                 <span>
@@ -463,15 +497,30 @@ function SignupSection() {
                 </span>
               </p>
             )}
-            {data.enabled && turnstile.data && !turnstile.data.configured && (
+            {data.mode === "apply" && !data.emailConfigured && (
               <p className="flex gap-2 rounded-lg bg-amber-50 px-3 py-2 text-amber-900 ring-1 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:ring-amber-900">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0" />
                 <span>
-                  Sign-up is open without a bot check: scripts can create accounts and send confirmation emails from your domain. Set up{" "}
+                  Email is not set up: applicants are not emailed when you approve them. Admin → Requests shows the invitation link to send yourself (see{" "}
+                  <a href="#email" className="font-medium underline">
+                    Sign-in links by email
+                  </a>
+                  ).
+                </span>
+              </p>
+            )}
+            {data.mode !== "off" && turnstile.data && !turnstile.data.configured && (
+              <p className="flex gap-2 rounded-lg bg-amber-50 px-3 py-2 text-amber-900 ring-1 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:ring-amber-900">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                <span>
+                  {data.mode === "open"
+                    ? "Sign-up is open without a bot check: scripts can create accounts and send confirmation emails from your domain."
+                    : "The request form has no bot check: scripts can fill your review queue."}{" "}
+                  Set up{" "}
                   <a href="#bot-protection" className="font-medium underline">
                     Bot protection
                   </a>{" "}
-                  before opening sign-up on a hosted instance.
+                  before opening {data.mode === "open" ? "sign-up" : "requests"} on a hosted instance.
                 </span>
               </p>
             )}
@@ -554,7 +603,7 @@ function TurnstileSection() {
       <Section
         icon={<Bot />}
         title="Bot protection (Cloudflare Turnstile)"
-        description="A free, privacy-friendly bot check on sign-up, on sign-in links by email, and on sign-in after 3 failed attempts."
+        description="A free, privacy-friendly bot check on sign-up and access requests, on sign-in links by email, and on sign-in after 3 failed attempts."
       >
         {!data ? (
           <Skeleton className="h-9 w-full max-w-xl" />
@@ -574,7 +623,7 @@ function TurnstileSection() {
               <p>
                 Create a widget in the <ExtLink href="https://dash.cloudflare.com/?to=/:account/turnstile">Cloudflare dashboard → Turnstile</ExtLink> (free): add this
                 instance&rsquo;s hostname <code className="font-mono text-xs">{window.location.hostname}</code>, keep the Managed mode, then paste its keys here.
-                Without it, do not open public sign-up on a hosted instance.
+                Without it, do not open sign-up or access requests on a hosted instance.
               </p>
             </div>
             <Field label="Site key" help={data.siteKeyFromEnv ? `${envNote} (TURNSTILE_SITE_KEY var).` : "Public: shown to the browser."}>

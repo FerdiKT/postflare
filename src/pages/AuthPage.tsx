@@ -11,7 +11,8 @@ import { countdown, useNow, useVisiblePoll } from "../lib/poll";
 import type { AppLoginStartDTO } from "../lib/types";
 
 /**
- * `magicLink`: the instance can email sign-in links, offered next to the password. `signup`: public sign-up is on.
+ * `magicLink`: the instance can email sign-in links, offered next to the password. `signup`: public sign-up is on;
+ * `apply`: people request access instead (/apply).
  * `turnstileSiteKey`: the bot check is on: always for sign-in links, for the password once the server answers
  * `captchaRequired` (3 recent failures). Never for the first-run setup. `appLogin`: "Sign in with the iPhone app" (QR,
  * plus "Send a request to my iPhone" with `pushLogin`), docs/app-login-spec.md.
@@ -21,6 +22,7 @@ export function AuthPage({
   setupToken: askToken = false,
   magicLink = false,
   signup = false,
+  apply = false,
   turnstileSiteKey,
   appLogin = false,
   pushLogin = false,
@@ -31,6 +33,8 @@ export function AuthPage({
   setupToken?: boolean;
   magicLink?: boolean;
   signup?: boolean;
+  /** signupMode apply: "Request access" instead of "Create an account". */
+  apply?: boolean;
   turnstileSiteKey?: string;
   appLogin?: boolean;
   pushLogin?: boolean;
@@ -234,6 +238,14 @@ export function AuthPage({
             </Link>
           </p>
         )}
+        {!setup && !signup && apply && (
+          <p className="border-t border-zinc-100 pt-4 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+            Don&rsquo;t have an account?{" "}
+            <Link to="/apply" className="font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400">
+              Request access
+            </Link>
+          </p>
+        )}
       </form>
     </AuthShell>
   );
@@ -432,11 +444,24 @@ export function FormError({ tone = "red", children }: { tone?: "red" | "amber"; 
 }
 
 /** Centered card layout shared by sign-in, setup and invitation pages. */
-export function AuthShell({ title, subtitle, children, footer }: { title: ReactNode; subtitle?: ReactNode; children: ReactNode; footer?: ReactNode }) {
+export function AuthShell({
+  title,
+  subtitle,
+  children,
+  footer,
+  wide = false,
+}: {
+  title: ReactNode;
+  subtitle?: ReactNode;
+  children: ReactNode;
+  footer?: ReactNode;
+  /** Longer forms (Request access): a wider card. */
+  wide?: boolean;
+}) {
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-12">
       <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(60rem_30rem_at_50%_-10%,rgba(249,115,22,0.16),transparent)] dark:bg-[radial-gradient(60rem_30rem_at_50%_-10%,rgba(249,115,22,0.12),transparent)]" />
-      <div className="w-full max-w-sm">
+      <div className={wide ? "w-full max-w-xl" : "w-full max-w-sm"}>
         <div className="mb-8 flex justify-center">
           <Wordmark />
         </div>

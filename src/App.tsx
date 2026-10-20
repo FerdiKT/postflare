@@ -17,7 +17,9 @@ import { BillingAdminPage } from "./pages/admin/BillingPage";
 import { OverviewPage } from "./pages/admin/OverviewPage";
 import { RolesPage } from "./pages/admin/RolesPage";
 import { UsersPage } from "./pages/admin/UsersPage";
+import { ApplyPage } from "./pages/ApplyPage";
 import { AuthPage } from "./pages/AuthPage";
+import { RequestsPage } from "./pages/admin/RequestsPage";
 import { CalendarPage } from "./pages/CalendarPage";
 import { ComposerProvider } from "./pages/composer/ComposerProvider";
 import { DashboardPage } from "./pages/DashboardPage";
@@ -69,6 +71,7 @@ export function App() {
         authenticated: false,
         ...(s?.magicLink ? { magicLink: true as const } : {}),
         ...(s?.signup ? { signup: true as const } : {}),
+        ...(s?.signupMode ? { signupMode: s.signupMode } : {}),
         ...(s?.turnstileSiteKey ? { turnstileSiteKey: s.turnstileSiteKey } : {}),
         ...(s?.appLogin ? { appLogin: true as const } : {}),
         ...(s?.pushLogin ? { pushLogin: true as const } : {}),
@@ -98,6 +101,17 @@ export function App() {
             {/* Public sign-up (hosted mode, off by default): the form, and the email confirmation link. */}
             <Route path="/signup" element={status.setup && !status.authenticated && status.signup ? <SignupPage onDone={() => window.location.assign("/")} turnstileSiteKey={status.turnstileSiteKey} /> : <Navigate to="/" replace />} />
             <Route path="/auth/verify" element={<VerifySignupPage />} />
+            {/* "Request access" (signup_mode apply): the application form; the open mode sends people to /signup instead. */}
+            <Route
+              path="/apply"
+              element={
+                status.setup && !status.authenticated && status.signupMode === "apply" ? (
+                  <ApplyPage turnstileSiteKey={status.turnstileSiteKey} />
+                ) : (
+                  <Navigate to={status.setup && !status.authenticated && status.signup ? "/signup" : "/"} replace />
+                )
+              }
+            />
             <Route
               path="*"
               element={
@@ -107,6 +121,7 @@ export function App() {
                     setupToken={!!status.setupToken}
                     magicLink={!!status.magicLink}
                     signup={!!status.signup}
+                    apply={status.signupMode === "apply"}
                     turnstileSiteKey={status.turnstileSiteKey}
                     appLogin={!!status.appLogin}
                     pushLogin={!!status.pushLogin}
@@ -170,6 +185,7 @@ function WorkspaceScope() {
                 <Route path="profile" element={<ProfilePage />} />
                 <Route path="admin" element={<InstanceGate permission="instance.overview.view">{<OverviewPage />}</InstanceGate>} />
                 <Route path="admin/users" element={<InstanceGate permission="instance.users.manage">{<UsersPage />}</InstanceGate>} />
+                <Route path="admin/requests" element={<InstanceGate permission="instance.users.manage">{<RequestsPage />}</InstanceGate>} />
                 <Route path="admin/roles" element={<InstanceGate permission="instance.users.manage">{<RolesPage />}</InstanceGate>} />
                 <Route path="admin/settings" element={<InstanceGate permission="instance.settings.manage">{<InstanceSettingsPage />}</InstanceGate>} />
                 <Route path="admin/billing" element={<InstanceGate permission="instance.settings.manage">{<BillingAdminPage />}</InstanceGate>} />

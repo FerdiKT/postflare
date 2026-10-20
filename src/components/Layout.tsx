@@ -13,6 +13,7 @@ import {
   CreditCard,
   Gauge,
   Image,
+  Inbox,
   KeyRound,
   LayoutDashboard,
   ListChecks,
@@ -31,10 +32,12 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
+import { api } from "../lib/api";
 import { useApp } from "../lib/app";
 import { cn } from "../lib/format";
 import { needsEmail, useSession } from "../lib/session";
 import { useUpdateStatus } from "../lib/updates";
+import { useFetch } from "../lib/useFetch";
 import type { InstancePermission, WorkspacePermission } from "../lib/types";
 import { useComposer } from "../pages/composer/ComposerProvider";
 import { BillingBanner } from "./billing/BillingBanner";
@@ -66,6 +69,7 @@ const NAV: NavItem[] = [
 const ADMIN_NAV: NavItem[] = [
   { to: "/admin", label: "Overview", icon: Gauge, end: true, instance: "instance.overview.view" },
   { to: "/admin/users", label: "Users", icon: UsersRound, instance: "instance.users.manage" },
+  { to: "/admin/requests", label: "Requests", icon: Inbox, instance: "instance.users.manage" },
   { to: "/admin/roles", label: "Roles", icon: Shield, instance: "instance.users.manage" },
   { to: "/admin/settings", label: "Instance settings", icon: SlidersHorizontal, instance: "instance.settings.manage" },
   { to: "/admin/billing", label: "Billing", icon: CreditCard, instance: "instance.settings.manage" },
@@ -226,6 +230,9 @@ function Sidebar({ onCompose, onLogout }: { onCompose?: () => void; onLogout: ()
   const nav = workspace ? NAV.filter((n) => !n.permission || can(n.permission)) : [];
   const admin = ADMIN_NAV.filter((n) => n.instance && canInstance(n.instance));
   const { data: update } = useUpdateStatus();
+  // Admin → Requests badge: access requests waiting for a review.
+  const requests = useFetch(canInstance("instance.users.manage") ? "access-requests:count" : null, api.accessRequests.count, ["requests"]);
+  const pending = requests.data?.pending ?? 0;
 
   return (
     <div className="flex h-full flex-col">
@@ -271,8 +278,13 @@ function Sidebar({ onCompose, onLogout }: { onCompose?: () => void; onLogout: ()
                 key={item.to}
                 item={item}
                 badge={
-                  item.to === "/admin/settings" &&
-                  update?.updateAvailable && <span className="size-2 rounded-full bg-brand-500" title={`Postflare v${update.latest} is available`} />
+                  item.to === "/admin/settings" && update?.updateAvailable ? (
+                    <span className="size-2 rounded-full bg-brand-500" title={`Postflare v${update.latest} is available`} />
+                  ) : item.to === "/admin/requests" && pending > 0 ? (
+                    <span title={`${pending} waiting for review`} className="min-w-5 rounded-full bg-brand-500 px-1.5 text-center text-[11px] font-semibold leading-5 text-white">
+                      {pending > 99 ? "99+" : pending}
+                    </span>
+                  ) : null
                 }
               />
             ))}
