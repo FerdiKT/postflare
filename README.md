@@ -436,16 +436,28 @@ The permission catalog is in [`worker/lib/permissions.ts`](worker/lib/permission
 
 ## Hosted mode (optional): sign-up, plans and billing
 
-The same code can run a hosted service: an instance admin turns on **public sign-up** and **selling plans**. Both are
-off by default, so a self-hosted instance looks and behaves exactly as before (no limits anywhere).
+The same code can run a hosted service: an instance admin opens **sign-up** (by application or open) and turns on
+**selling plans**. Both are off by default, so a self-hosted instance looks and behaves exactly as before (invitations
+only, no limits anywhere).
 
-- **Sign-up** (Admin → Settings): "Create an account" on the sign-in page. With email configured (`EMAIL` binding +
-  `EMAIL_FROM`, see the magic link notes in `wrangler.local.example.jsonc`) new accounts are confirmed by email first;
-  without it they are created right away, so configure email before opening sign-up on a public instance.
-- **Bot protection** (Admin → Settings): Cloudflare Turnstile (free) on sign-up, sign-in links by email and sign-in
+- **Sign-up** (Admin → Settings → Sign-up) has three modes:
+  - **Invitation only** (default): only people you invite get an account.
+  - **Request access**: people apply on `/apply` (name, email, company, website or main social profile, role,
+    platforms, expected accounts and volume, use case, consent to the Terms and Privacy Policy). Nothing is created
+    until an instance admin reviews the request in **Admin → Requests** (or in the iOS app):
+    approving creates an email-bound invitation into a new workspace of their own (Member role, normal 7 day expiry),
+    emailed when email is configured and always shown as a link to copy; rejecting can send a short, polite note.
+    Admins get a push on the iPhone app and an email for every new request. Use it when capacity is limited (Workers
+    Free quotas, platform app caps such as TikTok's unaudited apps).
+  - **Open sign-up**: "Create an account" on the sign-in page. With email configured (`EMAIL` binding + `EMAIL_FROM`,
+    see the magic link notes in `wrangler.local.example.jsonc`) new accounts are confirmed by email first; without it
+    they are created right away, so configure email before opening sign-up on a public instance.
+
+  The landing page and the sign-in page show "Request access" or "Sign up" to match.
+- **Bot protection** (Admin → Settings): Cloudflare Turnstile (free) on sign-up, access requests, sign-in links by email and sign-in
   after 3 failed attempts. Create a widget for your hostname in the Cloudflare dashboard → Turnstile and paste its
   site key and secret key (or set the `TURNSTILE_SITE_KEY` var and `TURNSTILE_SECRET_KEY` secret). Off until
-  configured; do not open sign-up on a hosted instance without it.
+  configured; do not open sign-up or access requests on a hosted instance without it.
 - **Plans** (Admin → Billing) are data: limits (connected accounts, posts and X posts per month, members, media
   storage, API/MCP access) plus monthly/yearly prices. Each workspace has its own plan; new workspaces start a trial
   (default 7 days, no card), then fall back to the free plan you mark, or become read-only.

@@ -186,7 +186,8 @@ workspace with "This workspace has no active plan…" (already scheduled posts a
   the same-origin check (and must be excluded from Cloudflare rate limiting rules). 404 when the provider is not
   configured, 400 on a bad signature, 200 otherwise (duplicates, ignored event types, unknown workspaces and stale
   events included: `{ ok, duplicate? | ignored? | stale?, workspaceId? }`).
-- `GET /auth/status` adds `signup: true` while sign-up is on.
+- `GET /auth/status` adds `signupMode` (`apply` | `open`; absent = invitations only) and `signup: true` while sign-up
+  is open (kept for older clients).
 - `POST /auth/signup` `{ name, email, password, workspaceName? }` → `SignupDTO`. With email configured:
   `{ ok: true, verify: true }` (a link `/auth/verify#<token>` is mailed, valid 24 h; the same answer when the email
   already has an account, whose owner gets a "sign in instead" email). Without email: `{ ok: true, verify: false,
@@ -224,7 +225,9 @@ workspace with "This workspace has no active plan…" (already scheduled posts a
 - `POST /admin/billing/plans/suggested` → 201 `AdminPlanDTO[]` (Free, Creator, Team without provider ids).
 - `PATCH /admin/billing/plans/:id` (any `PlanInput` subset) → `AdminPlanDTO`.
 - `DELETE /admin/billing/plans/:id` → `{ ok }`, or `{ ok, archived: true }` when workspaces are on it.
-- `GET /admin/signup` / `PATCH /admin/signup { enabled }` → `AdminSignupDTO` `{ enabled, emailConfigured }`.
+- `GET /admin/signup` / `PATCH /admin/signup { mode: "off" | "apply" | "open" }` → `AdminSignupDTO` `{ mode, enabled
+  (mode is open), emailConfigured }`. Older clients may still send `{ enabled }` (true = open, false = off); the
+  `signupEnabled` field of `PATCH /admin/billing` only switches open sign-up on or off and leaves `apply` alone.
 - `GET /admin/overview` adds `billing: { enabled, paying, trialing, pastDue, manual, exempt, mrrCents, currency }` and
   `counts.users.pending`.
 
@@ -242,6 +245,43 @@ workspace with "This workspace has no active plan…" (already scheduled posts a
 New workspace permission `billing.manage` (migration 0013: built-in Owner only). Everyone with `posts.read` reads
 `GET /billing`.
 
+## Access requests
+
+Sign-up by application (`signup_mode` apply, [hosted-spec.md](hosted-spec.md) "Access requests"). Types:
+`AccessRequestInput`, `AccessRequestDTO`, `AccessRequestListDTO`, `AccessRequestReviewInput`, `AccessRequestReviewDTO`
+in [shared/types.ts](../shared/types.ts).
+
+Public:
+- `POST /access-requests` `{ name, email, company?, url, role, platforms, accounts?, volume?, useCase, referral?,
+  consent: true, turnstileToken? }` → `{ ok: true }`, the same whether or not the email applied before or has an
+  account (a pending request of that email is updated). `role`: `creator | agency | startup | brand | other`;
+  `platforms`: one or more of `x, instagram, tiktok, youtube, linkedin, facebook, threads, bluesky, pinterest, other`;
+  `volume` (posts per month): `1-30 | 31-100 | 101-300 | 301-1000 | 1000+`; `useCase` 20-1000 characters; `url` http(s)
+  (a bare domain gets `https://`). 400 invalid input, 400 `code: "captcha"` (Turnstile action `apply`), 404 unless the
+  mode is `apply`, 429 after 5 per IP per hour or 3 per email per day.
+
+`instance.users.manage` (web session or iOS device token; API keys carry no instance permissions):
+- `GET /access-requests?status=pending|approved|rejected|withdrawn|all&q=&limit=&before=` → `AccessRequestListDTO`
+  `{ items, counts: { pending, approved, rejected, withdrawn }, nextBefore }`. Newest first; `q` searches name, email,
+  company and link; `limit` 1-100 (default 50); pass `nextBefore` as `before` for the next page. `status` defaults to
+  `all`.
+- `GET /access-requests/count` → `{ pending }` (nav badge).
+- `GET /access-requests/:id` → `AccessRequestDTO` `{ id, name, email, company, url, role, platforms, accounts, volume,
+  useCase, referral, status, ip, country, userAgent, createdAt, updatedAt, reviewedBy: { id, name } | null,
+  reviewedAt, reviewNote, invitationId, invitationAccepted, existingUser }`.
+- `PATCH /access-requests/:id` `{ status: "approved" | "rejected", note? (≤ 1000), notify? (default true) }` →
+  `AccessRequestReviewDTO` `{ request, invitation?: { id, url, expiresAt }, existingUser?: true, emailed }`.
+  - Approve (pending, rejected or withdrawn): an invitation bound to the email (instance role Member, new workspace named
+    after the company or "<name>'s workspace", 7 days), accepted with the normal `POST /invitations/accept`. Emailed
+    when `notify` and email is configured (`emailed`); `invitation.url` is always returned. Approving an approved
+    request whose invitation is unused returns a new link (the old one is revoked). An email that already has an
+    account: only marked approved (`existingUser: true`, no invitation).
+  - Reject (pending, or approved with an unused invitation, which is revoked): with `notify` and email configured a
+    short polite email includes the note.
+  - 409: already rejected, already approved for an existing account, invitation already accepted, or a concurrent
+    review. 404 unknown id.
+- 403 without the permission (401 signed out).
+
 ## Bot protection (Cloudflare Turnstile)
 
 Off unless configured: both a site key and a secret key, from Admin → Settings or the `TURNSTILE_SITE_KEY` var +
@@ -250,7 +290,8 @@ first-run `POST /auth/setup`.
 
 - `GET /auth/status` adds `turnstileSiteKey` (the widget's site key) while it is on.
 - The widget token goes in the body as `turnstileToken`:
-  - `POST /auth/signup` (widget action `signup`) and `POST /auth/magic-link` (action `magic_link`): always required.
+  - `POST /auth/signup` (widget action `signup`), `POST /access-requests` (action `apply`) and `POST /auth/magic-link`
+    (action `magic_link`): always required.
   - `POST /auth/login` (action `login`): only once the IP (IPv6 /64) or the email has 3 or more failed sign-ins in the
     current 15 minute window. The 401 of the failure that reaches 3 carries `captchaRequired: true`; until the counters
     clear (a successful sign-in or 15 minutes) a request without a valid token answers 400 with `captchaRequired: true`.

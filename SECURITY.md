@@ -35,8 +35,17 @@ redeploying from an up-to-date checkout.
   owner is told to sign in instead). Without email, sign-up is immediate and reveals whether an email is registered
   (409): configure email before opening sign-up publicly. Sign-ups are throttled to 5 per IP (IPv6 /64) per hour;
   unverified accounts are deleted after 7 days.
+- "Request access" (`signup_mode` apply) is off unless an instance admin turns it on. The public form
+  (`POST /api/access-requests`) creates nothing but a row for an admin to review: no user, session or email to the
+  applicant. It answers the same whether or not the email applied before or already has an account (a pending request
+  of the same email is updated in place, admins are notified once), validates every field (the link must be http(s),
+  the use case 20-1000 characters, consent required), is throttled to 5 per IP (IPv6 /64) per hour and 3 per email
+  per day (counted in D1), and needs a Turnstile token (action `apply`) when bot protection is configured, checked
+  before any write. Approving creates a normal invitation bound to the applicant's email (only that email can accept
+  it, 7 days, single use; a new link revokes the previous one). The admin pages render applicant text as text, never
+  HTML, and links open with `rel="noopener noreferrer nofollow"`. Rejected requests are deleted 180 days after review.
 - Bot protection (Cloudflare Turnstile) is off unless configured (Admin → Settings, or the `TURNSTILE_SITE_KEY` var
-  and `TURNSTILE_SECRET_KEY` secret). Then sign-up and sign-in links need a widget token, and sign-in does too once an
+  and `TURNSTILE_SECRET_KEY` secret). Then sign-up, access requests and sign-in links need a widget token, and sign-in does too once an
   IP or email has 3 recent failures. Tokens are verified server side (siteverify: success, hostname, action) before
   any password hashing, write or email, and the check fails closed (503) when Cloudflare cannot be reached. The stored
   secret is encrypted like platform tokens and never returned by the API. The app's Content-Security-Policy allows

@@ -167,8 +167,10 @@ provider retry forever). `billing_events` keeps 90 days (daily cleanup).
 
 ## Sign-up (public registration)
 
-- Setting `signup_enabled` (Admin → Settings, off by default; useful for self-hosters too). When on, the sign-in page
-  shows "Create an account" and `GET /api/auth/status` has `signup: true`.
+- Setting `signup_mode` (Admin → Settings → Sign-up; useful for self-hosters too): `off` (invitations only, default),
+  `apply` (access requests, below) or `open` (this section). Migration 0017 turned the older `signup_enabled = 1` into
+  `open`. With `open` the sign-in page shows "Create an account" and `GET /api/auth/status` has `signup: true` (kept
+  for older clients) and `signupMode: "open"`.
 - `POST /api/auth/signup { name, email, password, workspaceName? }`:
   - If email sending is configured (magic-link `EMAIL` binding + `EMAIL_FROM`), sign-up is **verified by email**: the
     user is created with `status = 'pending'`, a link `/auth/verify#<token>` is mailed (reuse `magic_links` with a
@@ -188,6 +190,44 @@ provider retry forever). `billing_events` keeps 90 days (daily cleanup).
   - New users get the instance **Member** role (can create workspaces); first workspace = Owner.
 - Landing page: the "Sign up — coming soon" button becomes "Sign up" → `/signup` when `signup` is true (the landing
   already reads `/api/auth/status`).
+
+## Access requests (sign-up by application)
+
+For instances that admit people by hand (capacity on Workers Free, platform app caps such as TikTok's unaudited
+apps, app reviews that want to see a gated, real service): `signup_mode = apply`.
+
+- `GET /api/auth/status` has `signupMode: "apply"` (no `signup`). The landing page turns its sign-up pills and a hero
+  button into "Request access" → `/apply` ("Sign up" → `/signup` stays for `open`; nothing changes when the API is
+  unreachable); the sign-in page shows "Don't have an account? Request access".
+- `/apply` (SPA route, signed out): name\*, email\*, company or brand, website or main social profile\* (http/https,
+  `example.com` becomes `https://example.com/`), role\* (Creator, Agency, Startup / app developer, Brand / marketing
+  team, Other), platforms\* (X, Instagram, TikTok, YouTube, LinkedIn, Facebook, Threads, Bluesky, Pinterest, Other),
+  accounts to connect (0-1000), posts per month (1-30, 31-100, 101-300, 301-1000, 1000+), use case\* (20-1000
+  characters), how they heard (≤ 200), consent\* (Terms + Privacy Policy). Turnstile action `apply` when configured.
+  The confirmation is the same for everyone: "We review every request by hand, usually within a few days. We'll email
+  you at …".
+- `POST /api/access-requests` (public; 404 unless `apply`): validates, throttles (5 per IP per hour, 3 per email per
+  day; settings counters `apply:<ip>` / `apply:email:<email>`, cleaned daily), bot check, then **one D1 batch**:
+  counters, `INSERT … ON CONFLICT (email) WHERE status = 'pending' DO UPDATE` (a pending request of the same email is
+  updated, never duplicated), the admin push devices and the admin emails. Only a new request notifies, after the
+  response: APNs push type `access_request` to at most 5 admin devices (instance.users.manage, device pref
+  `accessRequests` default on) and an email to at most 3 instance admins when email is configured. Always `{ ok }`.
+- Table `access_requests` (migration 0017): id, name, email, company, url, role, platforms (JSON), accounts, volume,
+  use_case, referral, status (`pending | approved | rejected | withdrawn`), ip, country, user_agent, created_at,
+  updated_at, reviewed_by, reviewed_at, review_note, invitation_id. Nothing is deleted automatically except rejected
+  requests 180 days after their last change.
+- Review (`instance.users.manage`): **Admin → Requests** (status tabs with counts, search, detail drawer, nav badge with
+  the pending count), and the iOS app (Settings → Access requests). Not through API keys (they are workspace-scoped and carry no
+  instance permissions), so not through the CLI or MCP.
+  - Approve: an invitation through the normal machinery (`invitations` row, email-bound, instance role Member, a new
+    workspace named after the company or "<name>'s workspace", 7 days). The applicant accepts it with the usual
+    `/invite/<token>` page and owns the new workspace (trial when billing is on). The link is emailed when email is
+    configured (template "Your Postflare access request was approved") and always returned, so the admin can send it
+    by hand on Workers Free (where Email Sending only reaches verified addresses). Approving again while the invitation
+    is unused issues a new link and revokes the old one. An email that already has an account is only marked approved.
+  - Reject: optional note; with `notify` (default) and email configured, a short polite email includes it. Rejecting an
+    approved request revokes its unused invitation.
+- Endpoints: [api.md](api.md) "Access requests".
 
 ## Permissions
 
@@ -221,7 +261,8 @@ Instance admin (`instance.settings.manage`):
   needed"; each with fields, sandbox toggle, webhook URL to copy, events to subscribe to, Test connection, "Use for new
   sales" radio), plans table with editor (limits form, prices, provider product ids per provider, free/trial default,
   highlight, archive), trial days and grace days, "Create suggested plans".
-- **Admin → Settings**: "Public sign-up" card (switch + warning without email).
+- **Admin → Settings**: "Sign-up" card (Invitation only / Request access / Open sign-up, warnings without email or
+  bot protection). **Admin → Requests**: access requests.
 - **Workspace settings → Billing** tab: current plan + status badge, trial countdown, usage meters vs limits,
   pricing cards with month/year switch → checkout redirect, "Manage billing" → portal, return URLs
   `/workspace?tab=billing&checkout=success|canceled` (success shows "Payment received, your plan updates in a moment"

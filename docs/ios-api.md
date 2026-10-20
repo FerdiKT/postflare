@@ -66,7 +66,8 @@ device token does the same.)
 ### Server info before sign-in
 
 `GET /auth/status` (no auth) → `AuthStatusDTO`: `setup` (false = fresh instance, set it up on the web first),
-`magicLink`, `signup`, `turnstileSiteKey`, `appLogin`, `pushLogin`, `appStoreUrl`. `GET /version` →
+`magicLink`, `signup`, `signupMode` (`apply`: people request access on `<server>/apply`; `open`: `<server>/signup`),
+`turnstileSiteKey`, `appLogin`, `pushLogin`, `appStoreUrl`. `GET /version` →
 `VersionDTO` `{ version, commit, apiVersion }`: refuse servers whose `apiVersion` the app does not support.
 
 ## Profile and workspaces
@@ -86,9 +87,11 @@ device token does the same.)
   `environment: "sandbox"` for development builds (`aps-environment` = development), `"production"` for TestFlight and
   the App Store. `apnsToken: null` turns push off. A token registered by another install (same phone signed in again)
   moves to this device. Only callable with a device token.
-- `PATCH /devices/me/prefs` `{ published?, failed?, workspaces? }` (or `{ prefs: {…} }`) → `DeviceDTO`.
-  `DevicePrefsDTO`: `published` (default true), `failed` (failed and needs_check, default true), `workspaces`
-  (ids, `null` = all the user's workspaces). Unknown fields are ignored.
+- `PATCH /devices/me/prefs` `{ published?, failed?, accessRequests?, workspaces? }` (or `{ prefs: {…} }`) →
+  `DeviceDTO`. `DevicePrefsDTO`: `published` (default true), `failed` (failed and needs_check, default true),
+  `accessRequests` (instance admins: new access requests, default true; only users with `instance.users.manage` ever
+  get them), `workspaces` (ids, `null` = all the user's workspaces; does not apply to access requests). Unknown fields
+  are ignored.
 - `GET /devices` → `{ items: DeviceDTO[], push: boolean }` (`push`: APNs is configured on the server). `DeviceDTO`:
   `{ id, name, push, environment, prefs, createdAt, lastSeenAt, lastPushAt, current? }` (`current`: the calling device).
 - `POST /devices/me/test` (or `/devices/:id/test`) → `{ ok }`: a test notification (`400` when APNs is not configured
@@ -194,6 +197,23 @@ Images: jpeg, png, gif, webp, heic/heif, avif; videos: mp4, quicktime, webm, x-m
 billing portal happen on the web (`POST /billing/checkout`, `POST /billing/portal` return a URL to open in Safari;
 do not sell digital subscriptions inside the app).
 
+## Access requests (instance admins)
+
+Only with `instance.users.manage` in `instancePermissions` (hide the screens otherwise; the server answers `403`).
+People apply on the web (`/apply`) while the instance's sign-up mode is "Request access"; admins review them.
+
+- `GET /access-requests?status=pending|approved|rejected|withdrawn|all&q=&limit=&before=` → `AccessRequestListDTO`
+  `{ items: AccessRequestDTO[], counts: { pending, approved, rejected, withdrawn }, nextBefore }` (newest first,
+  `limit` ≤ 100, next page with `before=<nextBefore>`).
+- `GET /access-requests/count` → `{ pending }` (badge).
+- `GET /access-requests/:id` → `AccessRequestDTO` (`role`: creator | agency | startup | brand | other; `platforms`:
+  x, instagram, tiktok, youtube, linkedin, facebook, threads, bluesky, pinterest, other; `volume`: 1-30 | 31-100 |
+  101-300 | 301-1000 | 1000+; `existingUser`, `invitationAccepted`).
+- `PATCH /access-requests/:id` `{ status: "approved" | "rejected", note?, notify? }` → `{ request, invitation?: { id,
+  url, expiresAt }, existingUser?, emailed }`. After approving show `invitation.url` with Copy and the share sheet
+  (it may not have been emailed: `emailed`). Approving an approved request with an unused invitation makes a new link.
+  `409` when the request was already handled. Details: [api.md](api.md#access-requests).
+
 ## Sign in on the web with the app
 
 The app approves browser sign-ins ([app-login-spec.md](app-login-spec.md)). Entry points:
@@ -221,6 +241,7 @@ to `aps`. `mutable-content` is not set. Tapping:
 - `post_published`, `post_failed`, `post_needs_check` → open the post (`postId`) in workspace `workspaceId` (switch the
   workspace first).
 - `web_login` → open the approval sheet for `id` (inspect it; no action buttons on the notification itself).
+- `access_request` → open access request `id` (Settings → Access requests).
 - `test` → nothing.
 
 Publish result (`thread-id` = workspace id, `apns-collapse-id` = `<postId>:<kind>`):
@@ -260,6 +281,25 @@ Time Sensitive Notifications capability), `apns-expiration` = the request's expi
 }
 ```
 
+New access request (instance admins with `accessRequests` on, at most 5 devices; `thread-id: access-requests`,
+`interruption-level: passive`, `apns-collapse-id` = the request id, expires after 7 days):
+
+```json
+{
+  "aps": {
+    "alert": {
+      "title": "New access request", "body": "Ann Lee · Ann Co · Startup / app developer",
+      "title-loc-key": "PUSH_ACCESS_REQUEST_TITLE", "title-loc-args": [],
+      "loc-key": "PUSH_ACCESS_REQUEST_BODY", "loc-args": ["Ann Lee", "Ann Co", "Startup / app developer"]
+    },
+    "sound": "default", "thread-id": "access-requests", "interruption-level": "passive"
+  },
+  "type": "access_request", "id": "ar_…"
+}
+```
+
+The second arg is the company, or the host of the applicant's link when there is none; the role label is English.
+
 ### Loc keys (ship these in `Localizable.strings`)
 
 | Key | Args | en | tr |
@@ -273,5 +313,7 @@ Time Sensitive Notifications capability), `apns-expiration` = the request's expi
 | `PUSH_WEB_LOGIN_BODY` | browser, OS, location | `%1$@ on %2$@ · %3$@` | `%2$@ üzerinde %1$@ · %3$@` |
 | `PUSH_TEST_TITLE` | – | `Postflare` | `Postflare` |
 | `PUSH_TEST_BODY` | – | `Notifications work.` | `Bildirimler çalışıyor.` |
+| `PUSH_ACCESS_REQUEST_TITLE` | – | `New access request` | `Yeni erişim isteği` |
+| `PUSH_ACCESS_REQUEST_BODY` | name, company or website, role | `%1$@ · %2$@ · %3$@` | `%1$@ · %2$@ · %3$@` |
 
 The account name and platform name come from the server untranslated (platform names are brand names).
