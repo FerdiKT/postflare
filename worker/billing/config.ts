@@ -21,8 +21,8 @@ export const SETTING = {
   graceDays: "billing_past_due_grace_days",
   /** First time billing went on (workspaces created before it are made exempt then). */
   activatedAt: "billing_activated_at",
-  /** Public sign-up ("1" = on). */
-  signup: "signup_enabled",
+  /** How people get an account: off (absent) | apply | open (worker/lib/signup.ts). */
+  signup: "signup_mode",
 } as const;
 
 export const providerConfigKey = (id: BillingProviderId) => `billing_provider:${id}`;
@@ -69,7 +69,7 @@ export async function loadBillingSettings(env: Env) {
     activeProvider: isBillingProviderId(provider) ? provider : null,
     trialDays: parseDays(s.get(SETTING.trialDays), DEFAULT_TRIAL_DAYS),
     graceDays: parseDays(s.get(SETTING.graceDays), DEFAULT_GRACE_DAYS),
-    signupEnabled: s.get(SETTING.signup) === "1",
+    signupEnabled: s.get(SETTING.signup) === "open",
     activatedAt: s.has(SETTING.activatedAt) ? Number(s.get(SETTING.activatedAt)) : null,
     configs,
   };
@@ -118,4 +118,5 @@ export async function recomputeBillingOn(env: Env): Promise<boolean> {
 /** Billing in effect (one settings read; request handlers read it from the workspace row instead). */
 export const billingOn = async (db: D1Database) => (await getSetting(db, SETTING.on)) === "1";
 
-export const signupEnabled = async (db: D1Database) => (await getSetting(db, SETTING.signup)) === "1";
+/** Public sign-up (/signup) is on: signup_mode open. */
+export const signupEnabled = async (db: D1Database) => (await getSetting(db, SETTING.signup)) === "open";

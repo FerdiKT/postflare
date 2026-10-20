@@ -14,6 +14,7 @@ import { sweepMedia } from "./lib/media-lifecycle";
 import { pruneDeletionsStatement } from "./lib/meta-deletion";
 import { updateCheckCron } from "./lib/updates";
 import { cronRunStatement, metricsEventsStatement, pruneUsageStatement, type MetricsEvent } from "./lib/usage";
+import { accessRequestPublicRoutes, accessRequestRoutes } from "./routes/accessRequests";
 import { accountGroupRoutes } from "./routes/accountGroups";
 import { accountRoutes } from "./routes/accounts";
 import { adminRoutes } from "./routes/admin";
@@ -45,6 +46,8 @@ api.post("/auth/demo", demoLogin);
 api.route("/auth/app-login", appLoginRoutes);
 api.route("/auth", authRoutes);
 api.route("/invitations", invitationPublicRoutes);
+// "Request access" form (signup_mode apply): POST only; the admin endpoints of the same path are below requireAuth.
+api.route("/access-requests", accessRequestPublicRoutes);
 api.route("/version", versionRoute);
 // Public pricing table and payment provider webhooks (signed by the provider, no session).
 api.route("/billing", billingPublicRoutes);
@@ -57,6 +60,7 @@ api.route("/", deviceRoutes);
 api.route("/", workspaceRoutes);
 api.route("/", userRoutes);
 api.route("/", invitationRoutes);
+api.route("/", accessRequestRoutes);
 api.route("/", platformRoutes);
 api.route("/", accountGroupRoutes);
 api.route("/", accountRoutes);
@@ -205,11 +209,13 @@ export async function dailyJobs(env: Env): Promise<void> {
     env.DB.prepare("DELETE FROM devices WHERE NOT EXISTS (SELECT 1 FROM sessions s WHERE s.id = devices.session_id AND s.expires_at > ?)").bind(now()).run(),
     env.DB.prepare("DELETE FROM upload_links WHERE expires_at < ?").bind(now() - 7 * 24 * 60 * 60 * 1000).run(),
     env.DB.prepare(
-      "DELETE FROM settings WHERE (key LIKE 'login_fail:%' OR key LIKE 'magic_link:%' OR key LIKE 'demo_login:%' OR key LIKE 'signup:%' OR key LIKE 'pair_fail:%' OR key LIKE 'app_login:%') AND json_extract(value, '$.until') < ?",
+      "DELETE FROM settings WHERE (key LIKE 'login_fail:%' OR key LIKE 'magic_link:%' OR key LIKE 'demo_login:%' OR key LIKE 'signup:%' OR key LIKE 'pair_fail:%' OR key LIKE 'app_login:%' OR key LIKE 'apply:%') AND json_extract(value, '$.until') < ?",
     )
       .bind(now())
       .run(),
     env.DB.prepare("DELETE FROM invitations WHERE accepted_at IS NULL AND expires_at < ?").bind(now() - 30 * 24 * 60 * 60 * 1000).run(),
+    // Access requests: only rejected ones go, 180 days after their last change (the rest is history for the admins).
+    env.DB.prepare("DELETE FROM access_requests WHERE status = 'rejected' AND updated_at < ?").bind(now() - 180 * 24 * 60 * 60 * 1000).run(),
     // Meta data deletion requests shown on /data-deletion/ (90 days).
     pruneDeletionsStatement(env.DB, now()).run(),
     // Usage events older than USAGE_RETENTION_DAYS (bounded per run).

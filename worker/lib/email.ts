@@ -95,3 +95,52 @@ export function signupExistingEmail(to: string, loginUrl: string): OutgoingEmail
     html: layout("You already have an account", `<p style="margin:0 0 20px;color:#52525b">${escapeHtml(text)}</p>\n${button(loginUrl, "Sign in")}`),
   };
 }
+
+// ---------- Access requests (docs/hosted-spec.md "Access requests") ----------
+
+const p = (text: string, extra = "") => `<p style="margin:0 0 16px;color:#52525b${extra}">${escapeHtml(text)}</p>`;
+
+/** Approved: the invitation link (email-bound, a new workspace of their own). */
+export function accessApprovedEmail(to: string, name: string, url: string, days: number): OutgoingEmail {
+  const host = new URL(url).host;
+  const intro = `Hi ${name}, your request to use Postflare on ${host} was approved. Create your account with the link below: it is for ${to} only and works for ${days} days.`;
+  return {
+    to,
+    subject: "Your Postflare access request was approved",
+    text: `${intro}\n\n${url}\n\nIf you did not ask for access, ignore this email.\n`,
+    html: layout(
+      "You're in",
+      `${p(intro)}
+${button(url, "Create your account")}
+<p style="margin:0;font-size:13px;color:#71717a">If you did not ask for access, ignore this email.<br><br>${escapeHtml(url)}</p>`,
+    ),
+  };
+}
+
+/** Rejected (only when the admin chose to notify): short and polite, with the admin's note when given. */
+export function accessRejectedEmail(to: string, name: string, host: string, note: string | null): OutgoingEmail {
+  const intro = `Hi ${name}, thank you for your interest in Postflare on ${host}. We can't offer you access right now: we keep the number of accounts small so the service stays reliable for everyone.`;
+  const outro = "You can always run your own copy of Postflare: it is open source and free to self-host.";
+  return {
+    to,
+    subject: "About your Postflare access request",
+    text: `${intro}\n\n${note ? `${note}\n\n` : ""}${outro}\n`,
+    html: layout("About your access request", `${p(intro)}${note ? p(note, ";white-space:pre-wrap;border-left:3px solid #e4e4e7;padding-left:12px") : ""}${p(outro, ";font-size:13px")}`),
+  };
+}
+
+/** Instance admins: a new access request to review. */
+export function newAccessRequestEmail(to: string, r: { name: string; email: string; company: string | null; url: string; role: string; useCase: string }, reviewUrl: string): OutgoingEmail {
+  const who = `${r.name} <${r.email}>${r.company ? ` · ${r.company}` : ""}`;
+  const lines = [who, `${r.role} · ${r.url}`, "", r.useCase];
+  return {
+    to,
+    subject: `Access request: ${r.name}${r.company ? ` (${r.company})` : ""}`,
+    text: `New access request on Postflare:\n\n${lines.join("\n")}\n\nReview it: ${reviewUrl}\n`,
+    html: layout(
+      "New access request",
+      `${p(who, ";font-weight:600;color:#18181b")}${p(`${r.role} · ${r.url}`)}${p(r.useCase, ";white-space:pre-wrap")}
+${button(reviewUrl, "Review")}`,
+    ),
+  };
+}

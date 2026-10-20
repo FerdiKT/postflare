@@ -8,6 +8,7 @@ import { emailConfigured, magicLinkEmail, magicLinkEnabled, sendEmail, signupExi
 import { hashPassword, needsRehash, verifyPassword } from "../lib/crypto";
 import { ROLE, parsePermissions } from "../lib/permissions";
 import { apnsConfigured } from "../lib/push";
+import { signupMode } from "../lib/signup";
 import { baseUrl, getSetting, setSetting } from "../lib/settings";
 import { CAPTCHA_UNAVAILABLE, allowedHostnames, turnstileConfig, turnstileSiteKey, verifyTurnstile, type TurnstileAction } from "../lib/turnstile";
 import { createWorkspaceStatements, normalizeEmail, normalizeName, passwordError } from "../lib/users";
@@ -16,7 +17,7 @@ import { newId, now, parseJson, randomToken, sha256Hex } from "../lib/util";
 
 export const authRoutes = new Hono<AppEnv>();
 
-async function hasUsers(db: D1Database) {
+export async function hasUsers(db: D1Database) {
   // The live demo's shared user does not count: the instance still needs its first real user. Nor do sign-ups that
   // were never verified (status pending).
   return !!(await db.prepare("SELECT 1 AS x FROM users WHERE is_demo = 0 AND status != 'pending' LIMIT 1").first());
@@ -35,11 +36,11 @@ export async function appDevices(db: D1Database): Promise<{ any: boolean; push: 
 }
 
 authRoutes.get("/status", async (c) => {
-  const [setup, session, magicLink, signup, turnstile, devices] = await Promise.all([
+  const [setup, session, magicLink, mode, turnstile, devices] = await Promise.all([
     hasUsers(c.env.DB),
     sessionUser(c),
     magicLinkEnabled(c.env),
-    signupEnabled(c.env.DB),
+    signupMode(c.env.DB),
     turnstileSiteKey(c.env),
     appDevices(c.env.DB),
   ]);
@@ -57,8 +58,10 @@ authRoutes.get("/status", async (c) => {
     ...(demoEnabled(c.env) ? { demo: true } : {}),
     // The sign-in page then offers "Email me a sign-in link instead" (EMAIL + EMAIL_FROM set and turned on by an admin).
     ...(setup && magicLink ? { magicLink: true } : {}),
-    // Public sign-up (hosted mode, docs/hosted-spec.md): the sign-in page offers "Create an account".
-    ...(setup && signup ? { signup: true } : {}),
+    // How new people get in (docs/hosted-spec.md): "Create an account" (open, `signup` kept for older clients) or
+    // "Request access" (apply). Absent = invitations only.
+    ...(setup && mode === "open" ? { signup: true } : {}),
+    ...(setup && mode !== "off" ? { signupMode: mode } : {}),
     // Cloudflare Turnstile is configured: sign-up, sign-in links and sign-in after 3 failures need a widget token.
     ...(turnstile ? { turnstileSiteKey: turnstile } : {}),
     ...(appLogin ? { appLogin: true as const } : {}),
@@ -135,10 +138,10 @@ const MAX_FAILURES_IP = 5;
 const MAX_FAILURES_EMAIL = 10;
 const LOCK_MS = 15 * 60 * 1000;
 
-type Failures = { n: number; until: number };
+export type Failures = { n: number; until: number };
 
 /** Failed logins per IP and per email, kept in D1 so the limit holds across isolates. */
-async function failures(env: Env, key: string): Promise<Failures> {
+export async function failures(env: Env, key: string): Promise<Failures> {
   return parseJson<Failures>(await getSetting(env.DB, key), { n: 0, until: 0 });
 }
 

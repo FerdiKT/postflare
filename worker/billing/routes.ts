@@ -25,6 +25,7 @@ import type {
 } from "../../shared/types";
 import { requireInstancePermission, requirePermission, wsId, type AppEnv } from "../lib/auth";
 import { emailConfigured } from "../lib/email";
+import { isSignupMode, signupMode } from "../lib/signup";
 import { baseUrl } from "../lib/settings";
 import { newId, now } from "../lib/util";
 import {
@@ -284,7 +285,8 @@ billingAdminRoutes.patch("/admin/billing", manageSettings, async (c) => {
   }
   if (body.signupEnabled !== undefined) {
     if (typeof body.signupEnabled !== "boolean") return c.json({ error: "signupEnabled must be true or false" }, 400);
-    stmts.push(setOrDelete(db, SETTING.signup, body.signupEnabled ? "1" : null));
+    // Older clients: on = open, off only turns off open sign-up (not "Request access").
+    stmts.push(body.signupEnabled ? setOrDelete(db, SETTING.signup, "open") : db.prepare("DELETE FROM settings WHERE key = ? AND value = 'open'").bind(SETTING.signup));
   }
   if (body.enabled !== undefined) {
     if (typeof body.enabled !== "boolean") return c.json({ error: "enabled must be true or false" }, 400);
@@ -501,18 +503,20 @@ billingAdminRoutes.patch("/admin/workspaces/:id/billing", manageUsers, async (c)
   return c.json(adminWorkspaceDto((await workspaceBilling(db, row.id))!));
 });
 
-// Public sign-up switch (the Admin → Settings card)
+// Sign-up mode (the Admin → Settings "Sign-up" card): off | apply | open
 
 async function signupState(env: Env): Promise<AdminSignupDTO> {
-  const v = await env.DB.prepare("SELECT value FROM settings WHERE key = ?").bind(SETTING.signup).first<{ value: string }>();
-  return { enabled: v?.value === "1", emailConfigured: emailConfigured(env) };
+  const mode = await signupMode(env.DB);
+  return { mode, enabled: mode === "open", emailConfigured: emailConfigured(env) };
 }
 
 billingAdminRoutes.get("/admin/signup", manageSettings, async (c) => c.json(await signupState(c.env)));
 
 billingAdminRoutes.patch("/admin/signup", manageSettings, async (c) => {
-  const body = await c.req.json<{ enabled?: unknown }>().catch(() => ({}) as { enabled?: unknown });
-  if (typeof body.enabled !== "boolean") return c.json({ error: "enabled must be true or false" }, 400);
-  await setOrDelete(c.env.DB, SETTING.signup, body.enabled ? "1" : null).run();
+  const body = await c.req.json<{ mode?: unknown; enabled?: unknown }>().catch(() => ({}) as { mode?: unknown; enabled?: unknown });
+  // `{ enabled }` from older clients: true = open, false = off.
+  const mode = body.mode !== undefined ? body.mode : typeof body.enabled === "boolean" ? (body.enabled ? "open" : "off") : undefined;
+  if (!isSignupMode(mode)) return c.json({ error: "mode must be off, apply or open" }, 400);
+  await setOrDelete(c.env.DB, SETTING.signup, mode === "off" ? null : mode).run();
   return c.json(await signupState(c.env));
 });

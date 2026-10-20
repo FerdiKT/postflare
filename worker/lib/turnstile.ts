@@ -1,5 +1,5 @@
 /**
- * Cloudflare Turnstile (bot check) for the public auth forms: sign-up, sign-in links by email, and sign-in after repeated
+ * Cloudflare Turnstile (bot check) for the public auth forms: sign-up, access requests, sign-in links by email, and sign-in after repeated
  * failures. Off unless configured: a site key + secret key from Admin → Settings (table `settings`, the secret encrypted
  * with encryptJson), or the TURNSTILE_SITE_KEY var + TURNSTILE_SECRET_KEY secret, which win when set.
  *
@@ -12,7 +12,7 @@ export const SITEVERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/si
 /** Settings keys: the site key in clear (it is public), the secret as an encryptJson blob. */
 export const TURNSTILE_SETTING = { siteKey: "turnstile_site_key", secret: "turnstile_secret" } as const;
 /** Actions set on the widget and checked against siteverify's `action`. */
-export type TurnstileAction = "signup" | "magic_link" | "login" | "app_login";
+export type TurnstileAction = "signup" | "magic_link" | "login" | "app_login" | "apply";
 
 export const CAPTCHA_FAILED = "The bot check failed. Try again.";
 export const CAPTCHA_UNAVAILABLE = "The bot check could not reach Cloudflare. Try again in a minute.";

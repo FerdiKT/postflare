@@ -57,12 +57,12 @@ describe("public sign-up", () => {
     expect((await call(null, "/api/auth/status")).json.signup).toBeUndefined();
     expect((await signup({ name: "Ann", email: "ann@example.com", password: PW })).status).toBe(404);
     expect((await verify("x".repeat(43))).status).toBe(404);
-    expect((await call(admin, "/api/admin/signup")).json).toEqual({ enabled: false, emailConfigured: true });
+    expect((await call(admin, "/api/admin/signup")).json).toEqual({ mode: "off", enabled: false, emailConfigured: true });
   });
 
   it("is turned on by an instance admin", async () => {
     const res = await call(admin, "/api/admin/signup", { method: "PATCH", body: { enabled: true } });
-    expect(res.json).toEqual({ enabled: true, emailConfigured: true });
+    expect(res.json).toEqual({ mode: "open", enabled: true, emailConfigured: true });
     expect((await call(null, "/api/auth/status")).json.signup).toBe(true);
     expect((await call(admin, "/api/admin/billing")).json.signupEnabled).toBe(true);
   });
@@ -141,7 +141,7 @@ describe("public sign-up", () => {
   });
 
   it("without email: immediate account, signed in; an existing email answers 409", async () => {
-    expect((await call(admin, "/api/admin/signup", {}, NOEMAIL)).json).toEqual({ enabled: true, emailConfigured: false });
+    expect((await call(admin, "/api/admin/signup", {}, NOEMAIL)).json).toEqual({ mode: "open", enabled: true, emailConfigured: false });
     const res = await signup({ name: "Cat", email: "cat@example.com", password: PW }, NOEMAIL);
     expect(res.status, res.text).toBe(200);
     expect(res.json).toMatchObject({ ok: true, verify: false });

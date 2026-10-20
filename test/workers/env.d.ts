@@ -36,5 +36,7 @@ declare namespace Cloudflare {
     APP_LOGIN_DB: D1Database;
     /** Own instance for MEDIA_PUBLIC_URL (CDN media URLs) and image thumbnails (fake Images binding). */
     MEDIA_CDN_DB: D1Database;
+    /** Own instance for access requests (/apply): sign-up modes, review, invitations, admin push and emails. */
+    ACCESS_DB: D1Database;
   }
 }

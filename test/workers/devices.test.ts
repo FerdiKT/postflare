@@ -230,7 +230,7 @@ describe("devices and push registration", () => {
     expect(await E.DB.prepare("SELECT apns_token FROM devices WHERE id = ?").bind(a.deviceId).first("apns_token")).toBeNull();
 
     const prefs = await call({ token: b.token }, "/api/devices/me/prefs", { method: "PATCH", body: { failed: false, workspaces: [ownerWs, 42], bogus: 1 } });
-    expect(prefs.json.prefs).toEqual({ published: true, failed: false, workspaces: [ownerWs] });
+    expect(prefs.json.prefs).toEqual({ published: true, failed: false, accessRequests: true, workspaces: [ownerWs] });
 
     const list = await call(owner, "/api/devices");
     expect(list.status).toBe(200);

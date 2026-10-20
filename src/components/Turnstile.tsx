@@ -47,7 +47,7 @@ export function Turnstile({
   resetKey = 0,
 }: {
   siteKey: string;
-  action: "signup" | "magic_link" | "login" | "app_login";
+  action: "signup" | "magic_link" | "login" | "app_login" | "apply";
   onToken: (token: string | null) => void;
   onError?: (message: string) => void;
   resetKey?: number;

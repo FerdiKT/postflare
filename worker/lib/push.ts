@@ -1,5 +1,6 @@
 // Push notifications to the Postflare iOS app (APNs, token auth with an ES256 JWT signed by Web Crypto): publish
-// results (published / failed / needs_check) and "sign in on the web" requests (docs/app-login-spec.md). Texts are
+// results (published / failed / needs_check), "sign in on the web" requests (docs/app-login-spec.md) and new access
+// requests (instance admins). Texts are
 // localized on the device (title-loc-key / loc-key + args; the keys are listed in docs/ios-api.md "Push
 // notifications"); `title` / `body` carry an English fallback.
 //
@@ -16,11 +17,13 @@ export interface DevicePrefs {
   published: boolean;
   /** A post failed, or needs a check (the platform may or may not have it). */
   failed: boolean;
+  /** Instance admins: a new access request (only sent to users with instance.users.manage). */
+  accessRequests: boolean;
   /** Only posts of these workspaces; null = every workspace the user can see posts of. */
   workspaces: string[] | null;
 }
 
-export const DEFAULT_PREFS: DevicePrefs = { published: true, failed: true, workspaces: null };
+export const DEFAULT_PREFS: DevicePrefs = { published: true, failed: true, accessRequests: true, workspaces: null };
 
 export function parsePrefs(json: string | null | undefined): DevicePrefs {
   return cleanPrefs(parseJson<unknown>(json, {}), DEFAULT_PREFS);
@@ -33,6 +36,7 @@ export function cleanPrefs(input: unknown, base: DevicePrefs): DevicePrefs {
   const src = input as Record<string, unknown>;
   if (typeof src.published === "boolean") out.published = src.published;
   if (typeof src.failed === "boolean") out.failed = src.failed;
+  if (typeof src.accessRequests === "boolean") out.accessRequests = src.accessRequests;
   if (src.workspaces === null) out.workspaces = null;
   else if (Array.isArray(src.workspaces)) out.workspaces = [...new Set(src.workspaces.filter((w): w is string => typeof w === "string" && w.length <= 64))].slice(0, 100);
   return out;
@@ -181,6 +185,8 @@ export const PUSH_KEYS = {
   webLoginBody: "PUSH_WEB_LOGIN_BODY",
   testTitle: "PUSH_TEST_TITLE",
   testBody: "PUSH_TEST_BODY",
+  accessRequestTitle: "PUSH_ACCESS_REQUEST_TITLE",
+  accessRequestBody: "PUSH_ACCESS_REQUEST_BODY",
 } as const;
 
 interface PostPushRow extends PushDevice {
@@ -298,4 +304,40 @@ export async function userPushDevices(db: D1Database, userId: string): Promise<P
     .bind(now(), userId)
     .all<PushDevice>();
   return results;
+}
+
+// ---------- New access requests (instance admins) ----------
+
+/**
+ * Devices of the instance admins (active, non-demo users whose instance role has instance.users.manage) that want
+ * access request pushes: for the D1 batch of POST /api/access-requests (no extra round trip). Null when APNs is off.
+ */
+export function adminPushStatement(env: Env, db: D1Database, t: number): D1PreparedStatement | null {
+  if (!apnsConfigured(env)) return null;
+  return db
+    .prepare(
+      `SELECT d.id, d.apns_token, d.environment FROM devices d
+       JOIN users u ON u.id = d.user_id AND u.status = 'active' AND u.is_demo = 0
+       JOIN roles r ON r.id = u.role_id AND EXISTS (SELECT 1 FROM json_each(r.permissions) WHERE value = 'instance.users.manage')
+       JOIN sessions s ON s.id = d.session_id AND s.kind = 'device' AND s.expires_at > ?
+       WHERE d.apns_token IS NOT NULL AND COALESCE(json_extract(d.prefs, '$.accessRequests'), 1) = 1
+       ORDER BY s.last_used_at DESC LIMIT ${MAX_DEVICES_PER_EVENT}`,
+    )
+    .bind(t);
+}
+
+export function accessRequestAlert(id: string, name: string, who: string, role: string): Alert {
+  return {
+    titleKey: PUSH_KEYS.accessRequestTitle,
+    titleArgs: [],
+    bodyKey: PUSH_KEYS.accessRequestBody,
+    bodyArgs: [name, who, role],
+    title: "New access request",
+    body: [name, who, role].filter(Boolean).join(" · "),
+    threadId: "access-requests",
+    interruption: "passive",
+    data: { type: "access_request", id },
+    collapseId: id,
+    expiration: Math.floor(Date.now() / 1000) + 7 * 86_400,
+  };
 }

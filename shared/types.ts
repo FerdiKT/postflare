@@ -529,8 +529,10 @@ export interface AuthStatusDTO {
   setupToken?: true;
   /** Present (true) when sign-in links by email are on (EMAIL binding + EMAIL_FROM, turned on by an instance admin). */
   magicLink?: true;
-  /** Present (true) when public sign-up is on (instance setting signup_enabled): show "Create an account". */
+  /** Present (true) when public sign-up is on (signup_mode open): show "Create an account". */
   signup?: true;
+  /** How new people get an account: `apply` = "Request access" (/apply), `open` = "Create an account" (/signup). */
+  signupMode?: SignupMode;
   /**
    * Present when Cloudflare Turnstile is configured: the widget's site key. Sign-up and sign-in links then need a
    * `turnstileToken`, and sign-in too once the login answers `captchaRequired: true` (after 3 recent failures).
@@ -571,6 +573,8 @@ export interface DevicePrefsDTO {
   published: boolean;
   /** A post failed or needs a check (default on). */
   failed: boolean;
+  /** Instance admins (instance.users.manage): a new access request arrived (default on). */
+  accessRequests: boolean;
   /** Only these workspaces; null = all the user's workspaces. */
   workspaces: string[] | null;
 }
@@ -1493,8 +1497,17 @@ export interface AdminWorkspaceBillingInput {
   currentPeriodEnd?: number | null;
 }
 
-/** GET / PATCH /api/admin/signup (instance.settings.manage): the "Public sign-up" card. */
+/**
+ * How people get an account (instance setting signup_mode): `off` = by invitation only (default), `apply` = they
+ * request access on /apply and an instance admin approves each request (docs/hosted-spec.md "Access requests"),
+ * `open` = public sign-up on /signup.
+ */
+export type SignupMode = "off" | "apply" | "open";
+
+/** GET / PATCH /api/admin/signup (instance.settings.manage): the "Sign-up" card. PATCH takes `{ mode }` (or the older `{ enabled }`). */
 export interface AdminSignupDTO {
+  mode: SignupMode;
+  /** mode === "open" (kept for older clients). */
   enabled: boolean;
   /** Without email, sign-up is immediate (no verification): hosted instances should configure email first. */
   emailConfigured: boolean;
@@ -1515,3 +1528,97 @@ export interface SignupInput {
  * the email already has an account) or `{ ok: true, verify: false, workspaceId }` (no email configured: signed in).
  */
 export type SignupDTO = { ok: true; verify: true } | { ok: true; verify: false; workspaceId: string };
+
+// ---------------------------------------------------------------------------------------------------------------
+// Access requests ("Request access" on /apply, signup_mode apply; docs/hosted-spec.md "Access requests")
+
+export const ACCESS_REQUEST_ROLES = ["creator", "agency", "startup", "brand", "other"] as const;
+/** Creator · Agency · Startup / app developer · Brand / marketing team · Other */
+export type AccessRequestRole = (typeof ACCESS_REQUEST_ROLES)[number];
+export const ACCESS_REQUEST_PLATFORMS = ["x", "instagram", "tiktok", "youtube", "linkedin", "facebook", "threads", "bluesky", "pinterest", "other"] as const;
+export type AccessRequestPlatform = (typeof ACCESS_REQUEST_PLATFORMS)[number];
+/** Posts per month: 1-30, 31-100, 101-300, 301-1000, more than 1000. */
+export const ACCESS_REQUEST_VOLUMES = ["1-30", "31-100", "101-300", "301-1000", "1000+"] as const;
+export type AccessRequestVolume = (typeof ACCESS_REQUEST_VOLUMES)[number];
+export type AccessRequestStatus = "pending" | "approved" | "rejected" | "withdrawn";
+
+/** Body of POST /api/access-requests (public). Answers `{ ok: true }` whether or not the email applied before or has an account. */
+export interface AccessRequestInput {
+  name: string;
+  email: string;
+  company?: string;
+  /** Website or main social profile (http/https URL). */
+  url: string;
+  role: AccessRequestRole;
+  platforms: AccessRequestPlatform[];
+  /** Social accounts they plan to connect (0-1000). */
+  accounts?: number;
+  volume?: AccessRequestVolume;
+  /** 20-1000 characters. */
+  useCase: string;
+  /** How they heard about Postflare (optional, ≤ 200 characters). */
+  referral?: string;
+  /** Agreed to the Terms and the Privacy Policy (required). */
+  consent: true;
+  /** Cloudflare Turnstile token (action "apply"), required when the status has `turnstileSiteKey`. */
+  turnstileToken?: string;
+}
+
+/** GET /api/access-requests[/:id] (instance.users.manage). */
+export interface AccessRequestDTO {
+  id: string;
+  name: string;
+  email: string;
+  company: string | null;
+  url: string;
+  role: AccessRequestRole;
+  platforms: AccessRequestPlatform[];
+  accounts: number | null;
+  volume: AccessRequestVolume | null;
+  useCase: string;
+  referral: string | null;
+  status: AccessRequestStatus;
+  ip: string | null;
+  /** Two-letter country of the request (Cloudflare), or null. */
+  country: string | null;
+  userAgent: string | null;
+  createdAt: number;
+  updatedAt: number;
+  reviewedBy: { id: string; name: string } | null;
+  reviewedAt: number | null;
+  reviewNote: string | null;
+  invitationId: string | null;
+  /** The invitation was accepted (the applicant has signed up). */
+  invitationAccepted: boolean;
+  /** An account with this email exists on the instance. */
+  existingUser: boolean;
+}
+
+/** GET /api/access-requests?status=pending|approved|rejected|withdrawn|all&q=&limit=&before= */
+export interface AccessRequestListDTO {
+  items: AccessRequestDTO[];
+  /** Per status, over every request (ignores q). */
+  counts: Record<AccessRequestStatus, number>;
+  /** Pass as `before` for the next page (null = no more). */
+  nextBefore: number | null;
+}
+
+/** Body of PATCH /api/access-requests/:id. Approving an approved request whose invitation is unused makes a new link (the old one stops working). */
+export interface AccessRequestReviewInput {
+  status: "approved" | "rejected";
+  /** Shown to admins; on reject it is included in the email to the applicant. ≤ 1000 characters. */
+  note?: string;
+  /** Email the applicant (default true; only when email is configured). */
+  notify?: boolean;
+}
+
+/** PATCH /api/access-requests/:id */
+export interface AccessRequestReviewDTO {
+  request: AccessRequestDTO;
+  /** Approved: the invitation link (email-bound, new workspace, Member role). Absent when the email already has an account. */
+  invitation?: CreatedInvitationDTO;
+  /** Approved, but the email already has an account: only marked approved. */
+  existingUser?: true;
+  /** An email went to the applicant. */
+  emailed: boolean;
+}

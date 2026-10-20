@@ -14,7 +14,27 @@ import { baseUrl } from "../lib/settings";
 import { getRole, normalizeEmail, normalizeName, passwordError, rolePermissions } from "../lib/users";
 import { newId, now, randomToken, sha256Hex } from "../lib/util";
 
-const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+export const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * The INSERT of a new invitation (for a batch) with its id, link path (`/invite/<token>`, the token is only ever in
+ * the link: the row has its hash) and expiry. Accepted through POST /api/invitations/accept.
+ */
+export async function invitationStatement(
+  db: D1Database,
+  i: { email: string | null; instanceRoleId: string; workspaceId: string | null; workspaceRoleId: string | null; newWorkspaceName: string | null; invitedBy: string },
+) {
+  const token = randomToken(32);
+  const id = newId("inv_");
+  const t = now();
+  const statement = db
+    .prepare(
+      `INSERT INTO invitations (id, token_hash, email, instance_role_id, workspace_id, workspace_role_id, new_workspace_name, invited_by, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(id, await sha256Hex(token), i.email, i.instanceRoleId, i.workspaceId, i.workspaceRoleId, i.newWorkspaceName, i.invitedBy, t, t + INVITE_TTL_MS);
+  return { id, path: `/invite/${token}`, expiresAt: t + INVITE_TTL_MS, statement };
+}
 
 interface InvitationRow {
   id: string;
@@ -77,17 +97,9 @@ invitationRoutes.post("/invitations", forbidDemoUser, async (c) => {
     newWorkspaceName = normalizeName(body.newWorkspaceName);
   }
 
-  const token = randomToken(32);
-  const id = newId("inv_");
-  const t = now();
-  await db
-    .prepare(
-      `INSERT INTO invitations (id, token_hash, email, instance_role_id, workspace_id, workspace_role_id, new_workspace_name, invited_by, created_at, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .bind(id, await sha256Hex(token), email, instanceRole.id, workspaceId, workspaceRoleId, newWorkspaceName, c.var.user.id, t, t + INVITE_TTL_MS)
-    .run();
-  const out: CreatedInvitationDTO = { id, url: `${await baseUrl(c.env, c.req.url)}/invite/${token}`, expiresAt: t + INVITE_TTL_MS };
+  const inv = await invitationStatement(db, { email, instanceRoleId: instanceRole.id, workspaceId, workspaceRoleId, newWorkspaceName, invitedBy: c.var.user.id });
+  await inv.statement.run();
+  const out: CreatedInvitationDTO = { id: inv.id, url: `${await baseUrl(c.env, c.req.url)}${inv.path}`, expiresAt: inv.expiresAt };
   return c.json(out, 201);
 });
 
