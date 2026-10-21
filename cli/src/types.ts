@@ -67,6 +67,8 @@ export interface AccountDTO {
   statusMessage: string | null;
   expiresAt: number | null;
   createdAt: number;
+  /** Last reconnect, null if never (absent on older servers). */
+  reconnectedAt?: number | null;
   metricsStatus?: { status: string; message: string | null; checkedAt: number | null; metrics: MetricValues | null };
   /** Account group id, null when ungrouped (absent on servers without groups). */
   groupId?: string | null;

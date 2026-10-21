@@ -223,6 +223,8 @@ export interface AccountDTO {
   statusMessage: string | null;
   expiresAt: number | null;
   createdAt: number;
+  /** When the account was last connected again (OAuth reconnect / re-entered credentials), null if never. */
+  reconnectedAt: number | null;
   /** Analytics collection state. */
   metricsStatus: AccountMetricsStatusDTO;
   /** Account group (GET /api/account-groups) the account belongs to, null when ungrouped. */

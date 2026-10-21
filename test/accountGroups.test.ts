@@ -28,6 +28,7 @@ const acc = (id: string, provider: string, name: string, username: string | null
   statusMessage: null,
   expiresAt: null,
   createdAt: 0,
+  reconnectedAt: null,
   metricsStatus: { status: "ok", message: null, checkedAt: null, metrics: null },
   groupId,
 });

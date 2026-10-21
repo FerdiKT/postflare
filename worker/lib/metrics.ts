@@ -97,7 +97,8 @@ export function metricsStatusDto(row: AccountMetricsCols): AccountMetricsStatusD
   const provider = getProvider(row.provider);
   const supported = hasAnalytics(provider);
   return {
-    status: !supported ? "not_supported" : ((row.metrics_status as MetricsStatus | null) ?? "pending"),
+    // Unset status with stored metrics: collected before and not re-checked since a reconnect, not "pending".
+    status: !supported ? "not_supported" : ((row.metrics_status as MetricsStatus | null) ?? (row.metrics ? "ok" : "pending")),
     message: !supported ? `${provider?.name ?? row.provider} offers no analytics` : (row.metrics_message ?? null),
     checkedAt: row.metrics_checked_at ?? null,
     metrics: parseJson<MetricValues | null>(row.metrics, null),

@@ -35,6 +35,7 @@ export interface AccountRow {
   metrics_fails?: number;
   group_id?: string | null;
   avatar_checked_at?: number | null;
+  reconnected_at?: number | null;
 }
 
 /**
@@ -63,6 +64,7 @@ export function accountDto(row: AccountRow): AccountDTO {
     statusMessage: row.status_message,
     expiresAt: row.expires_at,
     createdAt: row.created_at,
+    reconnectedAt: row.reconnected_at ?? null,
     metricsStatus: metricsStatusDto(row),
     groupId: row.group_id ?? null,
   };
@@ -199,7 +201,8 @@ export async function saveConnectedAccounts(
            avatar_checked_at = excluded.avatar_checked_at,
            profile_url = excluded.profile_url, credentials_enc = excluded.credentials_enc, expires_at = excluded.expires_at,
            refresh_expires_at = excluded.refresh_expires_at, meta = excluded.meta, status = 'active', status_message = NULL, updated_at = excluded.updated_at,
-           metrics_status = NULL, metrics_message = NULL, metrics_next_at = NULL, metrics_fails = 0
+           reconnected_at = excluded.updated_at,
+           metrics_status = CASE WHEN accounts.metrics_status = 'ok' THEN 'ok' ELSE NULL END, metrics_message = NULL, metrics_next_at = NULL, metrics_fails = 0
          WHERE accounts.workspace_id = excluded.workspace_id`,
       ).bind(
         id,

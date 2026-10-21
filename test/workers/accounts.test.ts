@@ -37,6 +37,41 @@ describe("GET /api/connect/:provider/url", () => {
   });
 });
 
+describe("reconnecting an account", () => {
+  const ws = async () => (await E.DB.prepare("SELECT id FROM workspaces LIMIT 1").first<{ id: string }>())!.id;
+  const user = async () => (await E.DB.prepare("SELECT id FROM users LIMIT 1").first<{ id: string }>())!.id;
+  const dto = async (id: string) => (await call(owner, "/api/accounts")).json.find((a: any) => a.id === id);
+
+  it("records reconnectedAt and keeps analytics that already work; blocked analytics are re-checked", async () => {
+    mockPictures({});
+    const owner_ = { workspaceId: await ws(), userId: await user() };
+    const [id] = await saveConnectedAccounts(E, "instagram_standalone", [igAccount("ig_re", null)], owner_);
+    const fresh = await dto(id);
+    expect(fresh.reconnectedAt).toBeNull();
+    expect(fresh.metricsStatus.status).toBe("pending");
+    await E.DB.prepare("UPDATE accounts SET created_at = 1000, metrics = '{\"followers\":42}', metrics_status = 'ok', metrics_checked_at = 2000, metrics_next_at = ? WHERE id = ?")
+      .bind(Date.now() + 86_400_000, id)
+      .run();
+
+    expect(await saveConnectedAccounts(E, "instagram_standalone", [igAccount("ig_re", null)], owner_)).toEqual([id]);
+    const again = await dto(id);
+    expect(again.createdAt).toBe(1000);
+    expect(again.reconnectedAt).toBeGreaterThan(1000);
+    expect(again.metricsStatus).toMatchObject({ status: "ok", metrics: { followers: 42 } });
+    const row = await accountRow(id);
+    expect(row.metrics_next_at).toBeNull(); // collected again at the next analytics tick (new permissions)
+
+    // A blocked state is cleared so the new token is tried; the stored values still show as collected.
+    await E.DB.prepare("UPDATE accounts SET metrics_status = 'reconnect_required', metrics_message = 'grant insights' WHERE id = ?").bind(id).run();
+    await saveConnectedAccounts(E, "instagram_standalone", [igAccount("ig_re", null)], owner_);
+    expect((await accountRow(id)).metrics_status).toBeNull();
+    expect((await dto(id)).metricsStatus).toMatchObject({ status: "ok", message: null });
+    // Never collected: pending.
+    await E.DB.prepare("UPDATE accounts SET metrics = NULL WHERE id = ?").bind(id).run();
+    expect((await dto(id)).metricsStatus.status).toBe("pending");
+  });
+});
+
 // ---------------------------------------------------------------------------------------------------------------
 // Avatars copied to R2 (worker/lib/avatars.ts)
 
