@@ -110,6 +110,6 @@ export const moltbook: Provider = {
       json: { content: post.content, ...(target.parentId !== target.rootId ? { parent_id: target.parentId } : {}) },
       commit: true,
     });
-    return { externalId: String(res.comment.id), url: `https://www.moltbook.com/post/${target.rootId}` };
+    return { externalId: String(res.comment.id), url: `https://www.moltbook.com/post/${target.rootId}`, urlIsPost: true };
   },
 };

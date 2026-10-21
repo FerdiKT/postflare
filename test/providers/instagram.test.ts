@@ -177,7 +177,7 @@ describe("instagram (facebook login)", () => {
       [`GET ${FB_GRAPH}/M1`, { permalink: "https://www.instagram.com/p/abc/" }],
     ]);
     const r = await instagram.reply!(testContext(m.fetch), acc(), { rootId: "M1", parentId: "M1" }, post({ content: "link in bio", media: [] }));
-    expect(r).toEqual({ externalId: "CM1", url: "https://www.instagram.com/p/abc/" });
+    expect(r).toEqual({ externalId: "CM1", url: "https://www.instagram.com/p/abc/", urlIsPost: true }); // comments have no permalink
     expect(m.requests[0].form).toMatchObject({ message: "link in bio" });
   });
 

@@ -78,6 +78,14 @@ async function permalink(ctx: ProviderContext, token: string, id: string, fallba
   return bestEffort(async () => absolute((await graph<{ permalink_url?: string }>(ctx, `${FB_GRAPH}/${id}`, { token, query: { fields: "permalink_url" } })).permalink_url), fallback);
 }
 
+/**
+ * Public link of a comment: the post with `comment_id` (the part after the "_" of a Graph comment id
+ * "<object id>_<comment id>"), which opens the post scrolled to the comment. Built, not fetched: no subrequest.
+ */
+export function commentUrl(postId: string, commentId: string): string {
+  return `https://www.facebook.com/${postId}?comment_id=${encodeURIComponent(commentId.split("_").pop()!)}`;
+}
+
 /** Upload one unpublished photo and return its id (used for multi-photo posts and photo stories). */
 async function uploadPhoto(ctx: ProviderContext, account: AccountRecord, m: MediaItem): Promise<string> {
   const token = pageToken(account);
@@ -379,7 +387,7 @@ export const facebook: Provider = {
       json: { message: post.content || undefined, attachment_url: image?.url },
       commit: true,
     });
-    return { externalId: res.id, url: await permalink(ctx, pageToken(account), res.id, null) };
+    return { externalId: res.id, url: commentUrl(target.rootId, res.id) };
   },
 
   // Two sub-requests per post (node counts + insights) in one Graph Batch API fetch.

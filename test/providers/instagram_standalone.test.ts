@@ -92,7 +92,7 @@ describe("instagram (instagram login)", () => {
       [`GET ${IG_GRAPH}/MEDIA1`, json({ error: { message: "nope", code: 100 } }, 400)],
     ]);
     const r = await instagramStandalone.reply!(testContext(m.fetch), acc(), { rootId: "MEDIA1", parentId: "MEDIA1" }, post({ content: "first", media: [] }));
-    expect(r).toEqual({ externalId: "CM", url: null });
+    expect(r).toEqual({ externalId: "CM", url: null, urlIsPost: true });
   });
 
   it("maps 401 to auth", async () => {

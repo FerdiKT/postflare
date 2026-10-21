@@ -354,7 +354,7 @@ export async function liComment(ctx: ProviderContext, account: AccountRecord, ac
   const text = await res.text();
   const body = text ? JSON.parse(text) : {};
   const id = body.$URN ?? res.headers.get("x-restli-id") ?? body.id;
-  return { externalId: String(id), url: `https://www.linkedin.com/feed/update/${rootId}/` };
+  return { externalId: String(id), url: `https://www.linkedin.com/feed/update/${rootId}/`, urlIsPost: true };
 }
 
 export function liSetupNotes(products: string, scopes: string[]): string {

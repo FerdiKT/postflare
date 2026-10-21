@@ -10,7 +10,7 @@ import { ProviderError } from "../../worker/providers/errors";
 import { request, requestJson } from "../../worker/providers/http";
 import { getProvider } from "../../worker/providers/registry";
 import type { Provider } from "../../worker/providers/types";
-import { PublishWorkflow, followUpLabel } from "../../worker/workflow";
+import { PublishWorkflow, followUpLabel, followUpLog } from "../../worker/workflow";
 import { countingD1 } from "./d1-counter";
 import { ORIGIN, sessionCookie, type CallOptions, type Client } from "./helpers";
 
@@ -846,6 +846,20 @@ describe("usage_events (metering)", () => {
     expect(followUpLabel("Comments", 1)).toBe("Comment 2");
     expect(followUpLabel("Thread replies", 0)).toBe("Follow-up 1");
     expect(followUpLabel(undefined, 2)).toBe("Follow-up 3");
+  });
+
+  it("links a follow-up only to what the URL really is: the reply, or the post it comments on", () => {
+    // Facebook / YouTube / Reddit comments and X / Threads / Bluesky replies have their own URL.
+    expect(followUpLog("First comment", { externalId: "1_2", url: "https://www.facebook.com/9_1?comment_id=2" })).toBe(
+      "First comment posted: https://www.facebook.com/9_1?comment_id=2",
+    );
+    expect(followUpLog("Follow-up 1", { externalId: "t2", url: "https://x.com/a/status/t2" })).toBe("Follow-up 1 posted: https://x.com/a/status/t2");
+    // Instagram comments have no permalink: the post, with the comment id.
+    expect(followUpLog("First comment", { externalId: "1789", url: "https://www.instagram.com/p/ABC/", urlIsPost: true })).toBe(
+      "First comment posted on https://www.instagram.com/p/ABC/ (comment id 1789)",
+    );
+    expect(followUpLog("Follow-up 2", { externalId: "m2", url: "https://whop.com/p/1", urlIsPost: true })).toBe("Follow-up 2 posted on https://whop.com/p/1 (id m2)");
+    expect(followUpLog("First comment", { externalId: "1789", url: null, urlIsPost: true })).toBe("First comment posted (id 1789)");
   });
 
   it("records media uploads and deletes", async () => {

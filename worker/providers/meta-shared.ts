@@ -404,7 +404,8 @@ export async function instagramComment(ctx: ProviderContext, host: string, acc: 
     commit: true,
   });
   const url = await bestEffort(async () => (await graph<{ permalink?: string }>(ctx, `${host}/${rootId}`, { token: acc.token, query: { fields: "permalink" } })).permalink ?? null, null);
-  return { externalId: id, url };
+  // Instagram comments have no public permalink: link the post, the log names the comment id.
+  return { externalId: id, url, urlIsPost: true };
 }
 
 // ---------------------------------------------------------------------------

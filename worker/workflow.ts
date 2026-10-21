@@ -237,7 +237,7 @@ export class PublishWorkflow extends WorkflowEntrypoint<Env, PublishParams> {
         const label = followUpLabel(ctx.provider.capabilities.threadLabel, i);
         await db
           .batch([
-            logStatement(db, postId, "info", `${label} posted${r.url ? `: ${r.url}` : ` (id ${r.externalId})`}`),
+            logStatement(db, postId, "info", followUpLog(label, r)),
             replyEventStatement(db, {
               postId,
               outcome: "published",
@@ -455,6 +455,15 @@ function pushJobOf(kind: PostPushKind, postId: string, result: D1Result | undefi
 export function followUpLabel(threadLabel: string | undefined, index: number): string {
   if (/comment/i.test(threadLabel ?? "")) return index === 0 ? "First comment" : `Comment ${index + 1}`;
   return `Follow-up ${index + 1}`;
+}
+
+/**
+ * Log line of a published follow-up: its own link when the platform has one ("First comment posted: <url>"), else the
+ * post it is on with its id ("First comment posted on <post url> (comment id …)"), else only the id.
+ */
+export function followUpLog(label: string, r: { externalId: string; url?: string | null; urlIsPost?: boolean }): string {
+  if (r.url && r.urlIsPost) return `${label} posted on ${r.url} (${/comment/i.test(label) ? "comment " : ""}id ${r.externalId})`;
+  return `${label} posted${r.url ? `: ${r.url}` : ` (id ${r.externalId})`}`;
 }
 
 /** INSERT of a post log that only happens when the post is at `revision` in `status` with `updated_at = t`. */

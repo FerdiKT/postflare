@@ -61,7 +61,7 @@ describe("skool", () => {
   it("replies as a comment chain", async () => {
     const { fetch, requests } = mockFetch([[`POST ${API}/posts`, () => ({ id: "c2", name: "x" })]]);
     const r = await skool.reply!(testContext(fetch), account, { rootId: "post1", parentId: "c1", rootData: { group: "g1", slug: "my-group", name: "hello" } }, post());
-    expect(r).toEqual({ externalId: "c2", url: "https://www.skool.com/my-group/hello" });
+    expect(r).toEqual({ externalId: "c2", url: "https://www.skool.com/my-group/hello", urlIsPost: true });
     expect(requests[0].json).toMatchObject({ post_type: "comment", group_id: "g1", root_id: "post1", parent_id: "c1", metadata: { title: "", content: "Hello community" } });
   });
 

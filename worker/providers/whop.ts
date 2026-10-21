@@ -204,7 +204,7 @@ export const whop: Provider = {
     for (const m of post.media) fileIds.push(await uploadFile(c, tok, m));
     if (!(await waitForFiles(c, tok, fileIds, 25_000))) throw new ProviderError("Whop is still processing the comment's media", "transient");
     const id = await createForumPost(c, tok, { experienceId, content: post.content, fileIds }, target.parentId);
-    return { externalId: id, url: postUrl(experienceId, target.rootId), data: { experienceId } };
+    return { externalId: id, url: postUrl(experienceId, target.rootId), urlIsPost: true, data: { experienceId } };
   },
 
   async options(ctx, account, key, settings) {

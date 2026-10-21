@@ -115,7 +115,7 @@ describe("whop", () => {
   it("replies to the previous item", async () => {
     const { fetch, requests } = mockFetch([[`POST ${B}/api/v1/forum_posts`, () => ({ id: "post_c" })]]);
     const r = await whop.reply!(testContext(fetch, APP), account, { rootId: "post_1", parentId: "post_b", rootData: { experienceId: "exp_1" } }, post());
-    expect(r).toEqual({ externalId: "post_c", url: "https://whop.com/experiences/exp_1/post_1", data: { experienceId: "exp_1" } });
+    expect(r).toEqual({ externalId: "post_c", url: "https://whop.com/experiences/exp_1/post_1", urlIsPost: true, data: { experienceId: "exp_1" } });
     expect(requests[0].json).toEqual({ experience_id: "exp_1", content: "Hello forum", parent_id: "post_b" });
   });
 

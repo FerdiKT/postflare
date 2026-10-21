@@ -166,7 +166,7 @@ export const skool: Provider = {
     });
     const slug = target.rootData?.slug;
     const name = target.rootData?.name;
-    return { externalId: String(res.id), url: slug && name ? `https://www.skool.com/${slug}/${name}` : null };
+    return { externalId: String(res.id), url: slug && name ? `https://www.skool.com/${slug}/${name}` : null, urlIsPost: true };
   },
 
   async options(ctx, account, key, settings) {

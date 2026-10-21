@@ -274,6 +274,8 @@ describe("linkedin comments", () => {
     ]);
     const r = await linkedin.reply!(testContext(m.fetch, app), account, { rootId: "urn:li:share:1", parentId: "urn:li:comment:x" }, post({ content: "First!" }));
     expect(r.externalId).toBe("urn:li:comment:(urn:li:share:1,55)");
+    // No documented public link to one comment: the post's, flagged so the log does not call it the comment's.
+    expect(r).toMatchObject({ url: "https://www.linkedin.com/feed/update/urn:li:share:1/", urlIsPost: true });
     expect(m.requests[0].url).toBe("https://api.linkedin.com/rest/socialActions/urn%3Ali%3Ashare%3A1/comments");
     expect(m.requests[0].json).toEqual({ actor: "urn:li:person:abc", object: "urn:li:share:1", message: { text: "First!" } });
   });

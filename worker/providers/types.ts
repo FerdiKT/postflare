@@ -209,7 +209,14 @@ export interface Provider extends Omit<ProviderInfo, "auth" | "analytics" | "sta
     account: AccountRecord,
     target: ReplyTarget,
     post: PublishPost,
-  ): Promise<{ externalId: string; url?: string | null; data?: Record<string, unknown> }>;
+  ): Promise<{
+    externalId: string;
+    /** Public link of the reply itself; else (with `urlIsPost`) of the post it comments on. */
+    url?: string | null;
+    /** `url` is the commented post's: the platform has no public link to one comment (Instagram, LinkedIn...). */
+    urlIsPost?: boolean;
+    data?: Record<string, unknown>;
+  }>;
   /**
    * The account's current profile picture (one or two fetches). Implement it when the platform hands out signed,
    * expiring picture URLs (Meta, TikTok): lib/avatars.ts re-reads it about weekly and copies the image to R2.

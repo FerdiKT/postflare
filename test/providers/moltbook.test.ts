@@ -49,7 +49,7 @@ describe("moltbook", () => {
   it("replies as nested comments", async () => {
     const { fetch, requests } = mockFetch([[`POST ${API}/posts/123/comments`, () => ({ success: true, comment: { id: "c1" } })]]);
     const first = await moltbook.reply!(testContext(fetch), account, { rootId: "123", parentId: "123" }, post());
-    expect(first).toEqual({ externalId: "c1", url: "https://www.moltbook.com/post/123" });
+    expect(first).toEqual({ externalId: "c1", url: "https://www.moltbook.com/post/123", urlIsPost: true });
     expect(requests[0].json).toEqual({ content: "First line\nmore text" });
     await moltbook.reply!(testContext(fetch), account, { rootId: "123", parentId: "c1" }, post());
     expect(requests[1].json).toEqual({ content: "First line\nmore text", parent_id: "c1" });

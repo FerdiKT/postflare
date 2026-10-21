@@ -203,11 +203,12 @@ describe("facebook", () => {
 
   it("comments on the root post", async () => {
     const m = mf([
-      [`POST ${FB_GRAPH}/PAGE1_99/comments`, { id: "C1" }],
-      [`GET ${FB_GRAPH}/C1`, { permalink_url: "https://fb/c/1" }],
+      [`POST ${FB_GRAPH}/PAGE1_99/comments`, { id: "99_555" }],
     ]);
     const r = await facebook.reply!(testContext(m.fetch), page(), { rootId: "PAGE1_99", parentId: "C0" }, post({ content: "First!", media: [image()] }));
-    expect(r).toEqual({ externalId: "C1", url: "https://fb/c/1" });
+    // The comment's own link, built without a Graph round trip.
+    expect(r).toEqual({ externalId: "99_555", url: "https://www.facebook.com/PAGE1_99?comment_id=555" });
+    expect(m.requests).toHaveLength(1);
     expect(m.requests[0].json).toEqual({ message: "First!", attachment_url: image().url });
   });
 
