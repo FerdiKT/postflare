@@ -1,5 +1,6 @@
 import type { RoleScope } from "../../shared/types";
 import { trialStatements } from "../billing/entitlements";
+import { deleteAvatars } from "./avatars";
 import { mediaKeys } from "./media";
 import { terminateWorkflow } from "./posts";
 import { ROLE, isDemoRole, parsePermissions } from "./permissions";
@@ -117,8 +118,10 @@ export async function deleteWorkspace(env: Env, workspaceId: string): Promise<vo
     .bind(workspaceId)
     .all<{ id: string; r2_key: string; upload_id: string | null; status: string; has_thumb: number }>();
 
+  // RETURNING: the ids of the accounts whose avatar copies go after the rows.
+  const deleteAccounts = db.prepare("DELETE FROM accounts WHERE workspace_id = ? RETURNING id").bind(workspaceId);
   // Rows first: a workflow that wakes up after this finds no post and skips (publishing ones fail cleanly).
-  await db.batch([
+  const statements = [
     db.prepare("DELETE FROM post_logs WHERE post_id IN (SELECT id FROM posts WHERE workspace_id = ?)").bind(workspaceId),
     db.prepare("DELETE FROM post_metrics WHERE workspace_id = ?").bind(workspaceId),
     db.prepare("DELETE FROM account_metrics WHERE workspace_id = ?").bind(workspaceId),
@@ -129,7 +132,7 @@ export async function deleteWorkspace(env: Env, workspaceId: string): Promise<vo
     db.prepare("DELETE FROM workspace_apps WHERE workspace_id = ?").bind(workspaceId),
     db.prepare("DELETE FROM playbook_versions WHERE workspace_id = ?").bind(workspaceId),
     db.prepare("DELETE FROM playbooks WHERE workspace_id = ?").bind(workspaceId),
-    db.prepare("DELETE FROM accounts WHERE workspace_id = ?").bind(workspaceId),
+    deleteAccounts,
     db.prepare("DELETE FROM account_groups WHERE workspace_id = ?").bind(workspaceId),
     db.prepare("DELETE FROM media WHERE workspace_id = ?").bind(workspaceId),
     db.prepare("DELETE FROM upload_links WHERE workspace_id = ?").bind(workspaceId),
@@ -139,10 +142,13 @@ export async function deleteWorkspace(env: Env, workspaceId: string): Promise<vo
     db.prepare("UPDATE sessions SET workspace_id = NULL WHERE workspace_id = ?").bind(workspaceId),
     db.prepare("DELETE FROM workspace_members WHERE workspace_id = ?").bind(workspaceId),
     db.prepare("DELETE FROM workspaces WHERE id = ?").bind(workspaceId),
-  ]);
+  ];
+  const removed = await db.batch(statements);
 
   await Promise.allSettled(scheduled.map((r) => terminateWorkflow(env, r.workflow_id)));
   const keys = mediaKeys(media.filter((m) => m.status === "ready" || !m.upload_id));
+  // Avatar copies of the accounts (lib/avatars.ts).
+  await deleteAvatars(env, ((removed[statements.indexOf(deleteAccounts)]?.results ?? []) as Array<{ id: string }>).map((r) => r.id));
   for (let i = 0; i < keys.length; i += 1000) await env.MEDIA.delete(keys.slice(i, i + 1000));
   await Promise.allSettled(
     media

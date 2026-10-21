@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { MediaUsageDTO } from "../../shared/types";
 import { enforce } from "../billing/entitlements";
 import { forbidInDemoWorkspace, isInstanceAdmin, requirePermission, wsId, type AppEnv } from "../lib/auth";
+import { avatarKey, avatarSignedValue, isAvatarName } from "../lib/avatars";
 import { verifySignature } from "../lib/crypto";
 import { makeThumbnail, mediaDto, mediaKeys, safeFilename, thumbKey, type MediaRow } from "../lib/media";
 import { mediaUsage, postsBlockingMediaDelete } from "../lib/media-lifecycle";
@@ -313,6 +314,29 @@ export function num(v: string | undefined): number | null {
  * without a zone).
  */
 export const publicMedia = new Hono<AppEnv>();
+
+/**
+ * Account avatar copied to R2 (lib/avatars.ts): /m/avatars/:signature/:name, used when MEDIA_PUBLIC_URL is not set.
+ * Before the media route, which would take "avatars" for a media id. No D1 read.
+ */
+publicMedia.on(["GET", "HEAD"], "/avatars/:sig/:name", async (c) => {
+  const name = c.req.param("name");
+  if (!isAvatarName(name) || !(await verifySignature(c.env, avatarSignedValue(name), c.req.param("sig")))) return c.text("Not found", 404);
+  const head = c.req.method === "HEAD";
+  const obj: R2Object | R2ObjectBody | null = head ? await c.env.MEDIA.head(avatarKey(name)) : await c.env.MEDIA.get(avatarKey(name), { onlyIf: c.req.raw.headers });
+  if (!obj) return c.text("Not found", 404);
+  const headers = new Headers({
+    "content-type": obj.httpMetadata?.contentType ?? "application/octet-stream",
+    // The name holds the content hash: a new picture gets a new URL.
+    "cache-control": "public, max-age=31536000, immutable",
+    "x-content-type-options": "nosniff",
+    etag: obj.httpEtag,
+  });
+  if (!head && !("body" in obj)) return new Response(null, { status: 304, headers });
+  headers.set("content-length", String(obj.size));
+  if (head) return new Response(null, { headers });
+  return new Response((obj as R2ObjectBody).body, { headers });
+});
 
 /** Image thumbnail: /m/:id/:signature/thumb/480.webp (same signature). No D1 read: thumbnails exist only for finished uploads and are deleted with them. */
 publicMedia.on(["GET", "HEAD"], "/:id/:sig/thumb/:name", async (c) => {

@@ -2,6 +2,7 @@ import { ProviderError } from "./errors";
 import { clientFields, requireApp } from "./http";
 import {
   FB_GRAPH,
+  graph,
   facebookAuthorizeUrl,
   facebookPages,
   facebookUserId,
@@ -109,6 +110,14 @@ export const instagram: Provider = {
         meta: { pageId: p.id, pageName: p.name, metaUserId },
       };
     });
+  },
+
+  async profile(ctx, account) {
+    const res = await graph<{ profile_picture_url?: string }>(ctx, `${FB_GRAPH}/${account.externalId}`, {
+      token: account.credentials.accessToken as string,
+      query: { fields: "profile_picture_url" },
+    });
+    return { avatarUrl: res.profile_picture_url ?? null };
   },
 
   publish: (ctx, account, post) => instagramCreate(ctx, FB_GRAPH, igAccount(account), post),

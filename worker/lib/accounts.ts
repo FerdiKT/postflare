@@ -2,6 +2,7 @@ import type { AccountDTO } from "../../shared/types";
 import { getProvider, providers, redirectUriFor } from "../providers/registry";
 import { ProviderError } from "../providers/errors";
 import type { AccountRecord, ConnectedAccount, CredentialsUpdate, Provider, ProviderContext } from "../providers/types";
+import { AVATARS_PER_CONNECT, avatarUrl, copyAvatar, deleteAvatars, storedAvatarName } from "./avatars";
 import { decryptJson, encryptJson } from "./crypto";
 import { mediaAccess } from "./media";
 import { terminateWorkflow } from "./posts";
@@ -33,6 +34,7 @@ export interface AccountRow {
   metrics_next_at?: number | null;
   metrics_fails?: number;
   group_id?: string | null;
+  avatar_checked_at?: number | null;
 }
 
 /**
@@ -116,7 +118,8 @@ export async function findAccount(env: Env, workspaceId: string, id: string): Pr
 /**
  * Remove accounts with everything tied to them: their scheduled workflows are stopped, then their posts, post logs,
  * post and account metrics and the account rows (tokens, profile data) are deleted. Unscoped: callers check access.
- * Used by "Remove" on the Accounts page and by the Meta data deletion callback. 2 D1 round trips whatever the count.
+ * Used by "Remove" on the Accounts page and by the Meta data deletion callback. 2 D1 round trips whatever the count;
+ * their avatar copies in R2 go too (one R2 list per account).
  */
 export async function removeAccounts(env: Env, ids: string[]): Promise<void> {
   if (!ids.length) return;
@@ -134,6 +137,7 @@ export async function removeAccounts(env: Env, ids: string[]): Promise<void> {
     env.DB.prepare(`DELETE FROM posts WHERE account_id IN (${list})`).bind(...ids),
     env.DB.prepare(`DELETE FROM accounts WHERE id IN (${list})`).bind(...ids),
   ]);
+  await deleteAvatars(env, ids);
 }
 
 /** Thrown when a social account is already connected in another workspace (it is never moved silently). */
@@ -151,13 +155,13 @@ export async function saveConnectedAccounts(
   /** Plan limit check for the accounts that are new to the workspace (reconnects don't count); throws to refuse. */
   limit?: (adding: number) => Promise<void>,
 ): Promise<string[]> {
-  const existing = new Map<string, { id: string; workspace_id: string | null }>();
+  const existing = new Map<string, { id: string; workspace_id: string | null; avatar_url: string | null }>();
   if (accounts.length) {
     const { results } = await env.DB.prepare(
-      `SELECT id, external_id, workspace_id FROM accounts WHERE provider = ? AND external_id IN (${accounts.map(() => "?").join(",")})`,
+      `SELECT id, external_id, workspace_id, avatar_url FROM accounts WHERE provider = ? AND external_id IN (${accounts.map(() => "?").join(",")})`,
     )
       .bind(providerId, ...accounts.map((a) => a.externalId))
-      .all<{ id: string; external_id: string; workspace_id: string | null }>();
+      .all<{ id: string; external_id: string; workspace_id: string | null; avatar_url: string | null }>();
     for (const r of results) existing.set(r.external_id, r);
   }
   const elsewhere = accounts.filter((a) => {
@@ -174,18 +178,25 @@ export async function saveConnectedAccounts(
     const adding = accounts.filter((a) => !existing.has(a.externalId)).length;
     if (adding) await limit(adding);
   }
+  const ids = accounts.map((a) => existing.get(a.externalId)?.id ?? newId("acc_"));
+  // Copy the (often expiring) avatar URLs into R2 first, so the rows get the stable URL. Failures keep the platform's
+  // URL with avatar_checked_at NULL: the cron retries soon.
+  const avatars = await connectAvatars(env, accounts.slice(0, AVATARS_PER_CONNECT).map((a, i) => ({ id: ids[i], remote: a.avatarUrl ?? null })));
   // One batch whatever the number of accounts (a Facebook login may return dozens of pages): D1 query budget.
-  const ids: string[] = [];
   const statements: D1PreparedStatement[] = [];
   const t = now();
-  for (const a of accounts) {
-    const id = existing.get(a.externalId)?.id ?? newId("acc_");
+  for (const [i, a] of accounts.entries()) {
+    const id = ids[i];
     const enc = await encryptJson(env, a.credentials);
+    const stored = avatars.get(id);
+    // No picture at all counts as checked; a failed copy does not.
+    const checked = stored || !a.avatarUrl ? t : null;
     statements.push(
       env.DB.prepare(
-        `INSERT INTO accounts (id, provider, external_id, name, username, avatar_url, profile_url, credentials_enc, expires_at, refresh_expires_at, meta, status, status_message, created_at, updated_at, workspace_id, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', NULL, ?, ?, ?, ?)
+        `INSERT INTO accounts (id, provider, external_id, name, username, avatar_url, profile_url, credentials_enc, expires_at, refresh_expires_at, meta, status, status_message, created_at, updated_at, workspace_id, created_by, avatar_checked_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', NULL, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET name = excluded.name, username = excluded.username, avatar_url = excluded.avatar_url,
+           avatar_checked_at = excluded.avatar_checked_at,
            profile_url = excluded.profile_url, credentials_enc = excluded.credentials_enc, expires_at = excluded.expires_at,
            refresh_expires_at = excluded.refresh_expires_at, meta = excluded.meta, status = 'active', status_message = NULL, updated_at = excluded.updated_at,
            metrics_status = NULL, metrics_message = NULL, metrics_next_at = NULL, metrics_fails = 0
@@ -196,7 +207,7 @@ export async function saveConnectedAccounts(
         a.externalId,
         a.name,
         a.username ?? null,
-        a.avatarUrl ?? null,
+        stored?.url ?? a.avatarUrl ?? null,
         a.profileUrl ?? null,
         enc,
         a.expiresAt ?? null,
@@ -206,12 +217,30 @@ export async function saveConnectedAccounts(
         t,
         owner.workspaceId,
         owner.userId,
+        checked,
       ),
     );
-    ids.push(id);
   }
   if (statements.length) await env.DB.batch(statements);
+  // Reconnects: the previous copies of a replaced picture go.
+  const reconnected = new Set([...existing.values()].map((e) => e.id));
+  await Promise.all([...avatars].filter(([id]) => reconnected.has(id)).map(([id, copy]) => deleteAvatars(env, [id], copy.name)));
   return ids;
+}
+
+/** Copies of the accounts' pictures (in parallel), by account id. Never throws. */
+async function connectAvatars(env: Env, list: Array<{ id: string; remote: string | null }>): Promise<Map<string, { name: string; url: string }>> {
+  const out = new Map<string, { name: string; url: string }>();
+  const todo = list.filter((a) => a.remote && !storedAvatarName(a.remote, a.id));
+  if (!todo.length) return out;
+  const base = await baseUrl(env).catch(() => null);
+  await Promise.all(
+    todo.map(async (a) => {
+      const copy = await copyAvatar(env, base, a.id, a.remote!);
+      if (copy) out.set(a.id, copy);
+    }),
+  );
+  return out;
 }
 
 async function applyUpdate(env: Env, account: AccountRecord, update: CredentialsUpdate): Promise<AccountRecord> {
@@ -319,4 +348,88 @@ export async function refreshExpiringAccounts(env: Env, opts: { limit?: number }
     }
   }
   return results.length;
+}
+
+/** Re-check stored avatars this often (platforms' pictures change; their URLs expire within days). */
+export const AVATAR_RECHECK_MS = 7 * DAY;
+/** ...and retry failed copies after a day. */
+const AVATAR_RETRY_MS = DAY;
+/**
+ * Accounts whose avatar the frequent cron checks per tick: at most 3 fetches (token refresh, profile, picture), 1-2 D1
+ * queries (app config, refresh) and 2-3 R2 calls each, plus one SELECT and one UPDATE batch for the tick. Never
+ * copied accounts (new ones whose copy failed, accounts connected before avatars were copied) go first.
+ */
+export const AVATARS_PER_TICK = 2;
+
+/**
+ * Cron (and POST /accounts/:id/refresh with `rows`): copy account avatars into R2 (lib/avatars.ts). Per account: a
+ * fresh picture URL from `Provider.profile` when the platform has one (its URLs expire), else the stored platform
+ * URL; the copy replaces `avatar_url` and older copies are deleted. Accounts already pointing at a copy that the
+ * platform cannot refresh only get their URL rewritten when the media domain changed. Never throws; returns the
+ * number of accounts checked.
+ */
+export async function refreshAvatars(env: Env, opts: { limit?: number; rows?: AccountRow[] } = {}): Promise<number> {
+  const t = now();
+  const rows =
+    opts.rows ??
+    (
+      await env.DB.prepare(
+        `SELECT * FROM accounts WHERE status != 'disabled' AND (avatar_checked_at IS NULL OR avatar_checked_at < ?)
+           AND (workspace_id IS NULL OR workspace_id NOT IN (SELECT id FROM workspaces WHERE is_demo = 1))
+         ORDER BY avatar_checked_at, created_at LIMIT ?`,
+      )
+        .bind(t - AVATAR_RECHECK_MS, opts.limit ?? AVATARS_PER_TICK)
+        .all<AccountRow>()
+        .catch(() => ({ results: [] as AccountRow[] }))
+    ).results;
+  if (!rows.length) return 0;
+  const base = await baseUrl(env).catch(() => null);
+  const contexts = new Map<string, Promise<ProviderContext>>();
+  const updates: Array<{ row: AccountRow; url: string | null; name: string | null; checked: number }> = [];
+  for (const row of rows) {
+    const provider = getProvider(row.provider);
+    let remote: string | null = null;
+    if (provider?.profile && row.status === "active") {
+      try {
+        let ctx = contexts.get(provider.id);
+        if (!ctx) contexts.set(provider.id, (ctx = providerContext(env, provider)));
+        const account = await freshAccount(env, provider, await ctx, row);
+        remote = (await provider.profile(await ctx, account)).avatarUrl;
+      } catch (err) {
+        console.warn(`profile of ${row.provider}/${row.id} failed`, err);
+      }
+    }
+    const current = storedAvatarName(row.avatar_url, row.id);
+    if (!remote && !current) remote = row.avatar_url;
+    let url = row.avatar_url;
+    let name = current;
+    let ok = !remote && !!current;
+    if (remote) {
+      const copy = await copyAvatar(env, base, row.id, remote);
+      if (copy) {
+        url = copy.url;
+        name = copy.name;
+        ok = true;
+      } else if (!current) {
+        // Not copied: the fresh platform URL still beats an expired one (retried tomorrow).
+        url = remote;
+      }
+    } else if (current) {
+      // Our copy, but the media domain (MEDIA_PUBLIC_URL) or the public URL changed since: same file, new URL.
+      url = (await avatarUrl(env, base, current)) ?? url;
+    }
+    updates.push({ row, url, name, checked: ok || !url ? t : t - AVATAR_RECHECK_MS + AVATAR_RETRY_MS });
+  }
+  try {
+    // Guarded on the URL read above: a reconnect meanwhile wins.
+    const results = await env.DB.batch(
+      updates.map((u) =>
+        env.DB.prepare("UPDATE accounts SET avatar_url = ?, avatar_checked_at = ? WHERE id = ? AND avatar_url IS ?").bind(u.url, u.checked, u.row.id, u.row.avatar_url),
+      ),
+    );
+    await Promise.all(updates.map((u, i) => (u.name && results[i].meta.changes ? deleteAvatars(env, [u.row.id], u.name) : null)));
+  } catch (err) {
+    console.error("avatar refresh not saved", err);
+  }
+  return rows.length;
 }

@@ -379,6 +379,11 @@ export const tiktok: Provider = {
     return tiktokValidate(NAME, post, 35);
   },
 
+  async profile(ctx, account) {
+    const user = await userInfo(ctx, account.credentials.accessToken as string);
+    return { avatarUrl: user.avatar_url ?? null };
+  },
+
   async publish(ctx, account, post) {
     const t = token(account);
     const inbox = post.settings.postMode === "inbox";

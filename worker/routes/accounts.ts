@@ -6,6 +6,7 @@ import {
   findAccount,
   freshAccount,
   providerContext,
+  refreshAvatars,
   removeAccounts,
   saveConnectedAccounts,
   type AccountRow,
@@ -61,20 +62,27 @@ accountRoutes.delete("/accounts/:id", requirePermission("accounts.manage"), asyn
   return c.json({ ok: true });
 });
 
-/** Force a token refresh (also a quick "is this account still working" check). */
+/** Force a token refresh (also a quick "is this account still working" check), then re-copy the avatar. */
 accountRoutes.post("/accounts/:id/refresh", requirePermission("accounts.manage"), async (c) => {
   const row = await findAccount(c.env, wsId(c), c.req.param("id"));
   const provider = row && getProvider(row.provider);
   if (!row || !provider) return c.json({ error: "Not found" }, 404);
   // Demo workspace: the tokens are fake, there is nothing to refresh.
-  if (!provider.refresh || c.var.workspace?.demo) return c.json(accountDto(row));
-  try {
-    const ctx = await providerContext(c.env, provider, { requestUrl: c.req.url });
-    await freshAccount(c.env, provider, ctx, row, { force: true });
-    return c.json(accountDto((await findAccount(c.env, wsId(c), row.id))!));
-  } catch (err) {
-    return c.json({ error: errorMessage(err) }, 400);
+  if (c.var.workspace?.demo) return c.json(accountDto(row));
+  if (provider.refresh) {
+    try {
+      const ctx = await providerContext(c.env, provider, { requestUrl: c.req.url });
+      await freshAccount(c.env, provider, ctx, row, { force: true });
+    } catch (err) {
+      return c.json({ error: errorMessage(err) }, 400);
+    }
   }
+  const fresh = (await findAccount(c.env, wsId(c), row.id))!;
+  if (provider.profile || fresh.avatar_url) {
+    await refreshAvatars(c.env, { rows: [fresh] });
+    return c.json(accountDto((await findAccount(c.env, wsId(c), row.id)) ?? fresh));
+  }
+  return c.json(accountDto(fresh));
 });
 
 // Used by the composer to fill dynamic settings fields (boards, channels...), so it needs posts.write.

@@ -277,6 +277,11 @@ export const facebook: Provider = {
     }));
   },
 
+  async profile(ctx, account) {
+    const page = await graph<Page>(ctx, `${FB_GRAPH}/${account.externalId}`, { token: pageToken(account), query: { fields: "picture.type(large)" } });
+    return { avatarUrl: page.picture?.data?.url ?? null };
+  },
+
   async publish(ctx, account, post) {
     const errors = facebook.validate!(post);
     if (errors.length) throw new ProviderError(errors.join("; "), "invalid");

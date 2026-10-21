@@ -186,6 +186,14 @@ export const threads: Provider = {
     ];
   },
 
+  async profile(ctx, account) {
+    const me = await graph<{ threads_profile_picture_url?: string }>(ctx, `${THREADS_GRAPH}/me`, {
+      token: token(account),
+      query: { fields: "threads_profile_picture_url" },
+    });
+    return { avatarUrl: me.threads_profile_picture_url ?? null };
+  },
+
   async refresh(ctx, account) {
     const res = await graph<{ access_token: string; expires_in?: number }>(ctx, "https://graph.threads.net/refresh_access_token", {
       query: { grant_type: "th_refresh_token", access_token: token(account) },

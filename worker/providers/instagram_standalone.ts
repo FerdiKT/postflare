@@ -139,6 +139,14 @@ export const instagramStandalone: Provider = {
     return { credentials: { ...account.credentials, accessToken: res.access_token }, expiresAt: exp, refreshExpiresAt: exp };
   },
 
+  async profile(ctx, account) {
+    const res = await graph<{ profile_picture_url?: string }>(ctx, `${IG_GRAPH}/me`, {
+      token: account.credentials.accessToken as string,
+      query: { fields: "profile_picture_url" },
+    });
+    return { avatarUrl: res.profile_picture_url ?? null };
+  },
+
   publish: (ctx, account, post) => instagramCreate(ctx, IG_GRAPH, igAccount(account), post),
   checkStatus: (ctx, account, state) => instagramCheck(ctx, igAccount(account), state),
   reply: (ctx, account, target, post) => instagramComment(ctx, IG_GRAPH, igAccount(account), target.rootId, post),

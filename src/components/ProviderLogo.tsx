@@ -99,7 +99,9 @@ export function AccountAvatar({
   showProvider?: boolean;
   className?: string;
 }) {
-  const [failed, setFailed] = useState(false);
+  // Per URL: a refreshed avatar (copied to our storage) gets another chance after the old link failed.
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const failed = !!account?.avatarUrl && failedUrl === account.avatarUrl;
   const name = account?.name ?? "?";
   const initials = name
     .split(/\s+/)
@@ -114,7 +116,7 @@ export function AccountAvatar({
           src={account.avatarUrl}
           alt=""
           className="size-full rounded-full object-cover ring-1 ring-black/5 dark:ring-white/10"
-          onError={() => setFailed(true)}
+          onError={() => setFailedUrl(account.avatarUrl)}
           referrerPolicy="no-referrer"
         />
       ) : (

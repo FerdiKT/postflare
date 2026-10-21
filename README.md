@@ -193,7 +193,7 @@ deploys that file (through `.wrangler/deploy/config.json`). Check what will be d
 (measured: ~3ms CPU to stream 100MB), every provider call stays under 40 outgoing requests, and long uploads resume
 across Workflow steps. Request handlers and cron runs stay well under the Free plan's 50 D1 queries per invocation
 (writes are batched; tested in `test/workers/publish.test.ts`). Two crons: every 15 minutes (publishing safety nets,
-token refreshes, analytics) and daily at 03:00 UTC (cleanups, media retention, update check). Free plan quotas
+token refreshes, a couple of account avatar copies, analytics) and daily at 03:00 UTC (cleanups, media retention, update check). Free plan quotas
 (requests, D1, R2, Workflows) are plenty for a personal scheduler; R2 storage (10 GB) is the first one media-heavy use
 reaches, hence the media retention.
 
@@ -219,6 +219,10 @@ requests/day nor D1 reads; R2 reads are free up to 10 million/month and cached v
 given to platforms or in published posts) keep working, and unfinished uploads only ever get `/m/` links. Keep the
 domain once set: CDN URLs given to platforms (and to platforms that keep linking to our copy) depend on it. TikTok pulls
 photos by URL from verified domains only: verify the media domain in your TikTok app too.
+
+Account avatars are copied into the same bucket (`avatars/<account id>-<hash>.<ext>`, see `docs/api.md`) because the
+platforms' picture links expire: with the media domain they are served from it, otherwise from signed `/m/avatars/`
+links.
 
 Deleting media removes the file (and its thumbnail) from R2 right away, but with a Cache Rule the edge and browsers may
 keep serving a copy for up to its TTL (1 day above). Purge the URL in the dashboard (*Caching* → *Purge*) if a file must

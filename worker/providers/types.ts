@@ -210,6 +210,11 @@ export interface Provider extends Omit<ProviderInfo, "auth" | "analytics" | "sta
     target: ReplyTarget,
     post: PublishPost,
   ): Promise<{ externalId: string; url?: string | null; data?: Record<string, unknown> }>;
+  /**
+   * The account's current profile picture (one or two fetches). Implement it when the platform hands out signed,
+   * expiring picture URLs (Meta, TikTok): lib/avatars.ts re-reads it about weekly and copies the image to R2.
+   */
+  profile?(ctx: ProviderContext, account: AccountRecord): Promise<{ avatarUrl: string | null }>;
   /** Choices for a `dynamicOptions` field (boards, subreddits, channels, playlists...). */
   options?(ctx: ProviderContext, account: AccountRecord, key: string, settings: Record<string, unknown>): Promise<FieldOption[]>;
   /** Extra validation beyond capabilities. Return error messages. */

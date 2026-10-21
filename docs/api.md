@@ -18,6 +18,20 @@ README ("API & MCP", "Analytics", "Playbooks") and typed in `shared/types.ts`.
   `ProviderInfo.switchAccount` (`{ label, note }`) is set honour it, the others ignore it. Instagram (Instagram login)
   then adds `force_reauth=true`, which signs the user out of instagram.com in that browser: the default link never
   does. The connect dialog shows it as a "Use a different Instagram account" link with that warning.
+- `AccountDTO.avatarUrl`: a copy of the platform's profile picture in R2, because Instagram / Facebook / TikTok (and
+  other) picture URLs are signed and expire within days. Copied when the account is connected or reconnected (up to
+  10 per login, JPEG/PNG/GIF/WebP by magic bytes, ≤ 1 MB, https only, 5 s timeout) to
+  `avatars/<account id>-<content hash>.<ext>` and served as `<MEDIA_PUBLIC_URL>/avatars/<name>` or, without a media
+  domain, the signed `/m/avatars/:sig/:name` (public, immutable). A failed copy never fails the connect: the
+  platform's URL is kept and retried. The frequent cron re-checks a couple of accounts per tick (never copied ones
+  first, then each about weekly; failures after a day, `accounts.avatar_checked_at`, migration 0018): a fresh URL from
+  the provider's `profile()` (Instagram, Instagram via Facebook, Facebook, Threads, TikTok), else the stored one. So
+  accounts connected before this get their copy within hours, with no manual step. `POST /accounts/:id/refresh` also
+  re-copies it. A replaced picture's old copy, and all copies of removed accounts (and of deleted workspaces), are
+  deleted from R2. Clients keep falling back to initials when an image fails to load.
+- Publishing log (`PostDTO.logs`): every follow-up the workflow posts is logged as `info`, "First comment posted:
+  <url>" on comment-style platforms ("Comment 2 posted…"), "Follow-up N posted: <url>" otherwise (`(id …)` when the
+  platform gives no URL); failed ones stay `warn`.
 
 ## Account groups
 

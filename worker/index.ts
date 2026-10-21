@@ -3,7 +3,7 @@ import { billingAdminRoutes, billingPublicRoutes, billingRoutes } from "./billin
 import { PlanLimitError } from "./billing/entitlements";
 import { forbidDemoUser, isSessionValid, requireAuth, sameOriginMutations, type AppEnv } from "./lib/auth";
 import { APP_CSP, securityHeaders } from "./lib/headers";
-import { refreshExpiringAccounts } from "./lib/accounts";
+import { refreshAvatars, refreshExpiringAccounts } from "./lib/accounts";
 import { demoCron } from "./lib/demo";
 import { ensureSchema } from "./lib/migrate";
 import { recoverStuckPosts, sweepScheduledPosts } from "./lib/posts";
@@ -152,7 +152,7 @@ export function cronJob(cron: string, scheduledTime: number): CronJob | null {
 }
 
 /**
- * Every 15 minutes: publishing safety nets, token refreshes, analytics, the demo. Kept small: one invocation may run
+ * Every 15 minutes: publishing safety nets, token refreshes, avatar copies (a couple of accounts), the demo. Kept small: one invocation may run
  * at most 50 D1 queries and 50 external subrequests on the Free plan (test/workers/budget.test.ts counts them).
  */
 export async function frequentJobs(env: Env): Promise<void> {
@@ -161,6 +161,7 @@ export async function frequentJobs(env: Env): Promise<void> {
     sweepScheduledPosts(env),
     recoverStuckPosts(env),
     refreshExpiringAccounts(env),
+    refreshAvatars(env),
     demoCron(env),
   ]);
   await recordCronRun(env, "frequent", started);
