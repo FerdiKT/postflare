@@ -121,7 +121,7 @@ export function relativeTime(ts: number, now = Date.now()): string {
     ["minute", 6e4],
   ];
   for (const [unit, ms] of units) if (abs >= ms) return rtf.format(Math.round(diff / ms), unit);
-  return diff >= 0 ? "in a moment" : "just now";
+  return diff > 30_000 ? "in a moment" : "just now";
 }
 
 export function timezones(): string[] {

@@ -146,7 +146,8 @@ export const threads: Provider = {
 
   authorize(ctx, { state }) {
     requireApp(ctx, "Threads", "clientId", "clientSecret");
-    const u = new URL("https://threads.net/oauth/authorize");
+    // threads.net/oauth/authorize bounces signed-in threads.com users to their feed and drops the request.
+    const u = new URL("https://www.threads.com/oauth/authorize");
     u.searchParams.set("client_id", ctx.app.clientId);
     u.searchParams.set("redirect_uri", ctx.redirectUri);
     u.searchParams.set("scope", SCOPES.join(","));

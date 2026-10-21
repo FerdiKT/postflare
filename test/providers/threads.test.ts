@@ -25,7 +25,7 @@ function thMock(statuses: Record<string, string> = {}) {
 describe("threads", () => {
   it("builds the authorize URL", async () => {
     const url = new URL(await threads.authorize!(testContext(mf([]).fetch, APP, "threads"), { state: "S", codeVerifier: "v", codeChallenge: "c" }));
-    expect(url.origin + url.pathname).toBe("https://threads.net/oauth/authorize");
+    expect(url.origin + url.pathname).toBe("https://www.threads.com/oauth/authorize");
     expect(url.searchParams.get("client_id")).toBe("THAPP");
     expect(url.searchParams.get("scope")).toBe("threads_basic,threads_content_publish,threads_manage_replies,threads_manage_insights");
     expect(url.searchParams.get("redirect_uri")).toBe("https://pf.example.com/oauth/threads/callback");

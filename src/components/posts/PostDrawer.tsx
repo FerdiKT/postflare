@@ -8,7 +8,7 @@ import { useMediaLookup } from "../../lib/mediaCache";
 import { useSession } from "../../lib/session";
 import { playbookLabel, usePlaybookList } from "../../lib/playbooks";
 import { formatDateTime } from "../../lib/time";
-import type { PostDTO, PostWithLogs } from "../../lib/types";
+import type { FieldDef, PostDTO, PostWithLogs } from "../../lib/types";
 import { invalidate, useFetch } from "../../lib/useFetch";
 import { useComposer } from "../../pages/composer/ComposerProvider";
 import { PostPerformance } from "../analytics/PostPerformance";
@@ -174,8 +174,18 @@ function PlaybookLine({ post }: { post: PostDTO }) {
   );
 }
 
+/** A stored setting as the composer shows it: option labels, Yes/No for checkboxes. */
+function settingValue(field: FieldDef | undefined, v: unknown): string {
+  const label = (x: unknown) => field?.options?.find((o) => o.value === String(x))?.label ?? String(x);
+  if (Array.isArray(v)) return v.map(label).join(", ");
+  if (typeof v === "boolean") return v ? "Yes" : "No";
+  if (v && typeof v === "object") return JSON.stringify(v);
+  return label(v);
+}
+
 function PostBody({ post }: { post: PostWithLogs }) {
-  const { tz } = useApp();
+  const { tz, accountMap, providerMap } = useApp();
+  const fields = providerMap.get(accountMap.get(post.accountId)?.provider ?? "")?.settingsFields ?? [];
   const media = useMediaLookup([...post.media, ...post.thread.flatMap((t) => t.media)]);
   const settings = Object.entries(post.settings).filter(([, v]) => v !== "" && v !== null && v !== undefined && !(Array.isArray(v) && !v.length));
   const when = post.publishedAt ?? post.scheduledAt;
@@ -267,8 +277,8 @@ function PostBody({ post }: { post: PostWithLogs }) {
           <dl className="divide-y divide-zinc-100 rounded-lg ring-1 ring-zinc-200 dark:divide-zinc-800 dark:ring-zinc-800">
             {settings.map(([k, v]) => (
               <div key={k} className="flex gap-4 px-3 py-2 text-sm">
-                <dt className="w-32 shrink-0 text-zinc-500">{k}</dt>
-                <dd className="min-w-0 break-words">{Array.isArray(v) ? v.join(", ") : typeof v === "object" ? JSON.stringify(v) : String(v)}</dd>
+                <dt className="w-32 shrink-0 text-zinc-500">{fields.find((f) => f.key === k)?.label ?? k}</dt>
+                <dd className="min-w-0 break-words">{settingValue(fields.find((f) => f.key === k), v)}</dd>
               </div>
             ))}
           </dl>

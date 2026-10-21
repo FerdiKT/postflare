@@ -13,6 +13,9 @@ function compact(n: number): string {
   return n >= 10000 ? `${Math.round(n / 1000)}k` : String(n);
 }
 
+/** "Thread replies" → "thread reply", "Comments" → "comment" (button label). */
+const singular = (label: string) => label.toLowerCase().replace(/ies$/, "y").replace(/s$/, "");
+
 export function CharCounters({ text, providers }: { text: string; providers: Provider[] }) {
   const len = textLength(text);
   if (!providers.length) return <span className="text-xs tabular-nums text-zinc-400">{len}</span>;
@@ -182,7 +185,7 @@ export function ItemEditor({
             className="inline-flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
           >
             <MessageSquarePlus className="size-4" />
-            Add {threadLabel.toLowerCase().replace(/s$/, "")}
+            Add {singular(threadLabel)}
           </button>
         </div>
       )}
