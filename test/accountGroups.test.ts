@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ACCOUNT_GROUP_COLORS, defaultGroupColor, isAccountGroupColor } from "../shared/accountGroups";
+import { providerDisplayName } from "../shared/providerNames";
 import type { AccountDTO, AccountGroupDTO } from "../shared/types";
 import {
   GROUP_COLOR_CLASSES,
@@ -55,6 +56,11 @@ describe("buildSections", () => {
       ["p:x", "X", ["a4"]],
       ["p:youtube", "YouTube", ["a6", "a1"]],
     ]);
+  });
+
+  it("platform view before the provider catalog loads: fallback display names, never raw ids", () => {
+    const sections = buildSections([...ACCOUNTS, acc("a7", "facebook", "Party Games", null)], "platform", { providerName: (id) => providerDisplayName(id, new Map()) });
+    expect(sections.map((s) => s.title)).toEqual(["Facebook Page", "Instagram", "TikTok", "X (Twitter)", "YouTube"]);
   });
 
   it("group view: groups in position order (empty ones too), then Ungrouped (no group or an unknown one)", () => {

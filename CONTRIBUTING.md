@@ -39,7 +39,7 @@ Read [docs/provider-brief.md](docs/provider-brief.md) first: it describes the `P
 must respect (~10ms CPU and at most 40 outgoing requests per call; media is streamed, never buffered).
 
 In short:
-1. Add `worker/providers/<id>.ts` and register it in `worker/providers/registry.ts`.
+1. Add `worker/providers/<id>.ts`, register it in `worker/providers/registry.ts` and add its display name to `shared/providerNames.ts`.
 2. Use `ctx.fetch` through the `http.ts` helpers, never the global `fetch`.
 3. `publish`, `checkStatus` and `reply` run as retried Workflow steps: they must be safe to retry and never double-post.
 4. Add `test/providers/<id>.test.ts` with mocked API responses (see `test/helpers.ts`).

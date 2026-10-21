@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { PROVIDER_NAMES, providerDisplayName } from "../shared/providerNames";
 import { providerInfo, providers } from "../worker/providers/registry";
 
 describe("provider registry", () => {
@@ -12,6 +13,14 @@ describe("provider registry", () => {
     expect(by("verified")).toEqual(["tiktok", "webhook", "x"]);
     expect(by("experimental")).toEqual(["skool"]);
     expect(by("beta").length).toBe(providers.length - 4);
+  });
+
+  it("has fallback display names for every provider (Accounts page before the catalog loads)", () => {
+    expect(PROVIDER_NAMES).toEqual(Object.fromEntries(providers.map((p) => [p.id, p.name])));
+    expect(providerDisplayName("instagram_standalone")).toBe("Instagram");
+    expect(providerDisplayName("facebook", new Map())).toBe("Facebook Page");
+    expect(providerDisplayName("facebook", new Map([["facebook", { name: "Facebook" }]]))).toBe("Facebook");
+    expect(providerDisplayName("unknown_x")).toBe("unknown_x");
   });
 
   for (const p of providers) {

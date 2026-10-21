@@ -1,3 +1,4 @@
+import { providerDisplayName } from "@shared/providerNames";
 import { Select } from "../ui/Form";
 import { groupFilterValue } from "../../lib/accountGroups";
 import { useApp } from "../../lib/app";
@@ -11,7 +12,7 @@ export function AccountFilterSelect({ value, onChange, className }: { value: str
   const names = new Map<string, number>();
   for (const a of accounts) names.set(a.name, (names.get(a.name) ?? 0) + 1);
   // Same name on several platforms ("Party Games" on Instagram and YouTube): add the platform.
-  const label = (a: (typeof accounts)[number]) => ((names.get(a.name) ?? 0) > 1 ? `${a.name} · ${providerMap.get(a.provider)?.name ?? a.provider}` : a.name);
+  const label = (a: (typeof accounts)[number]) => ((names.get(a.name) ?? 0) > 1 ? `${a.name} · ${providerDisplayName(a.provider, providerMap)}` : a.name);
   const options = accounts.map((a) => (
     <option key={a.id} value={a.id}>
       {label(a)}

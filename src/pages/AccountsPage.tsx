@@ -26,6 +26,7 @@ import {
   Zap,
 } from "lucide-react";
 import { BioLinkDialog } from "../components/campaigns/bits";
+import { providerDisplayName } from "@shared/providerNames";
 import { MetricsStatusBadge } from "../components/analytics/bits";
 import { GroupBadge, GroupDialog, GroupDot, ManageGroupsDialog, MoveToGroupItems, useMoveToGroup } from "../components/accounts/AccountGroups";
 import { ConnectDialog } from "../components/accounts/ConnectDialog";
@@ -112,9 +113,9 @@ export function AccountsPage() {
     if (!connected && !error) return;
     handled.current = true;
     if (connected) {
-      const p = providerMap.get(params.get("provider") ?? "");
+      const provider = params.get("provider");
       const n = Number(connected);
-      toast.success(`${p?.name ?? "Account"} connected`, n > 1 ? `${n} accounts added` : undefined);
+      toast.success(`${provider ? providerDisplayName(provider, providerMap) : "Account"} connected`, n > 1 ? `${n} accounts added` : undefined);
       invalidate("accounts");
     } else if (error && params.get("planLimit")) {
       // Over the plan's account limit: the upgrade dialog instead of an error toast (next tick: PlanLimitDialog's
@@ -136,7 +137,8 @@ export function AccountsPage() {
     });
   }, [accounts]);
 
-  const providerName = useCallback((id: string) => providerMap.get(id)?.name ?? id, [providerMap]);
+  // Fallback names: right after an OAuth redirect the accounts can load before the provider catalog.
+  const providerName = useCallback((id: string) => providerDisplayName(id, providerMap), [providerMap]);
   const sections = useMemo(() => buildSections(accounts, view, { groups, providerName, query: q }), [accounts, view, groups, providerName, q]);
   const visible = useMemo(() => sections.flatMap((s) => s.accounts), [sections]);
   const searching = !!q.trim();
@@ -503,7 +505,7 @@ function AccountCard({
           )}
           <p className="mt-1.5 flex items-center gap-1.5 text-xs text-zinc-500">
             <ProviderLogo provider={provider} size="xs" />
-            {provider?.name ?? a.provider}
+            {provider?.name ?? providerDisplayName(a.provider)}
             {provider?.status === "experimental" && <ProviderStatusBadge provider={provider} className="px-1.5 py-0 text-[10px]" />}
           </p>
           {group && <GroupBadge group={group} className="mt-1.5" />}
