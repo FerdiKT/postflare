@@ -10,7 +10,7 @@ import { ProviderError } from "../../worker/providers/errors";
 import { request, requestJson } from "../../worker/providers/http";
 import { getProvider } from "../../worker/providers/registry";
 import type { Provider } from "../../worker/providers/types";
-import { PublishWorkflow } from "../../worker/workflow";
+import { PublishWorkflow, followUpLabel } from "../../worker/workflow";
 import { countingD1 } from "./d1-counter";
 import { ORIGIN, sessionCookie, type CallOptions, type Client } from "./helpers";
 
@@ -808,6 +808,44 @@ describe("usage_events (metering)", () => {
       ["publish", "published", 0],
       ["reply", "published", 1],
     ]);
+  });
+
+  it("logs every successful follow-up on the post, in the round trip its usage event already took", async () => {
+    await post("p_fu_log", "ws_p", "acc_hook", { thread: [{ content: "one", media: [] }, { content: "two", media: [] }] });
+    vi.spyOn(hook, "publish").mockResolvedValue({ status: "published", externalId: "root" });
+    (hook as any).reply = vi
+      .fn()
+      .mockResolvedValueOnce({ externalId: "c1", url: "https://example.com/c/1" })
+      .mockResolvedValueOnce({ externalId: "c2" });
+    // Same post without follow-ups: the baseline of D1 round trips.
+    await post("p_fu_base", "ws_p", "acc_hook");
+    try {
+      count.reset();
+      expect((await runWorkflow("p_fu_base", 0)).result).toMatchObject({ published: true });
+      const base = count.calls;
+      count.reset();
+      expect((await runWorkflow("p_fu_log", 0)).result).toMatchObject({ published: true });
+      // 8 round trips per follow-up step, as many as before the log: it joined the usage event's INSERT in one batch.
+      expect(count.calls - base, count.sql.join("\n")).toBe(2 * 8);
+      expect(count.sql.filter((q) => q === "[batch of 2]")).toHaveLength(2);
+      expect(count.calls, count.sql.join("\n")).toBeLessThan(50);
+    } finally {
+      delete (hook as any).reply;
+    }
+    const { results: logs } = await DB.prepare("SELECT level, message FROM post_logs WHERE post_id = 'p_fu_log' ORDER BY id").all<{ level: string; message: string }>();
+    expect(logs.slice(-2)).toEqual([
+      { level: "info", message: "Follow-up 1 posted: https://example.com/c/1" },
+      { level: "info", message: "Follow-up 2 posted (id c2)" },
+    ]);
+    expect((await events("p_fu_log")).filter((e) => e.kind === "reply")).toHaveLength(2);
+  });
+
+  it("labels follow-ups of comment-style platforms as comments", () => {
+    expect(followUpLabel("First comment", 0)).toBe("First comment");
+    expect(followUpLabel("Comments", 0)).toBe("First comment");
+    expect(followUpLabel("Comments", 1)).toBe("Comment 2");
+    expect(followUpLabel("Thread replies", 0)).toBe("Follow-up 1");
+    expect(followUpLabel(undefined, 2)).toBe("Follow-up 3");
   });
 
   it("records media uploads and deletes", async () => {

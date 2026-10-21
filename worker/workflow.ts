@@ -231,17 +231,23 @@ export class PublishWorkflow extends WorkflowEntrypoint<Env, PublishParams> {
           { rootId: root.externalId, parentId: parent.externalId, rootData: root.data, parentData: parent.data },
           item,
         );
-        // Usage event: best effort (never turns a published follow-up into a failure).
-        await replyEventStatement(this.env.DB, {
-          postId,
-          outcome: "published",
-          media: thread[i].media,
-          hasUrl: hasUrl(thread[i].content),
-          fetches: ctx.usage.fetches,
-          imagesTx: ctx.usage.imagesTx,
-          t: now(),
-        })
-          .run()
+        // Its post log and usage event: one batch, the round trip the usage event alone used to take. Best effort
+        // (never turns a published follow-up into a failure).
+        const db = this.env.DB;
+        const label = followUpLabel(ctx.provider.capabilities.threadLabel, i);
+        await db
+          .batch([
+            logStatement(db, postId, "info", `${label} posted${r.url ? `: ${r.url}` : ` (id ${r.externalId})`}`),
+            replyEventStatement(db, {
+              postId,
+              outcome: "published",
+              media: thread[i].media,
+              hasUrl: hasUrl(thread[i].content),
+              fetches: ctx.usage.fetches,
+              imagesTx: ctx.usage.imagesTx,
+              t: now(),
+            }),
+          ])
           .catch(() => {});
         return { externalId: r.externalId, url: r.url ?? null, data: r.data ?? {} };
       });
@@ -443,6 +449,12 @@ type AttemptFn<T> = (c: {
 /** The push job of a mark step's batch result (the rows of `postPushStatement`), as a plain JSON step value. */
 function pushJobOf(kind: PostPushKind, postId: string, result: D1Result | undefined): PostPushJob | null {
   return postPushJob(kind, postId, result?.results as Parameters<typeof postPushJob>[2]);
+}
+
+/** "First comment" (comment-style platforms), else "Follow-up N", as in the post's log. */
+export function followUpLabel(threadLabel: string | undefined, index: number): string {
+  if (/comment/i.test(threadLabel ?? "")) return index === 0 ? "First comment" : `Comment ${index + 1}`;
+  return `Follow-up ${index + 1}`;
 }
 
 /** INSERT of a post log that only happens when the post is at `revision` in `status` with `updated_at = t`. */
