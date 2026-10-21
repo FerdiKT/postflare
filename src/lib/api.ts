@@ -297,7 +297,9 @@ export const api = {
       get<FieldOption[]>(`/accounts/${id}/options/${encodeURIComponent(key)}?settings=${encodeURIComponent(JSON.stringify(settings))}`),
   },
   connect: {
-    url: (provider: string) => get<{ url: string }>(`/connect/${provider}/url`),
+    /** `switchAccount`: force the platform's login to pick another account (providers with `switchAccount` only). */
+    url: (provider: string, opts: { switchAccount?: boolean } = {}) =>
+      get<{ url: string }>(`/connect/${provider}/url${opts.switchAccount ? "?switchAccount=1" : ""}`),
     credentials: (provider: string, values: Record<string, string>) =>
       request<{ ids: string[] }>("POST", `/connect/${provider}`, { values }),
   },

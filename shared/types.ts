@@ -95,6 +95,11 @@ export interface ProviderInfo {
   status: ProviderStatus;
   /** Short qualifier of `status` (shown in tooltips and the README table). */
   statusNote?: string;
+  /**
+   * OAuth providers whose login can be forced to ask for another account (`GET /connect/:provider/url?switchAccount=1`).
+   * `label` is the link text, `note` warns about side effects (e.g. it signs the user out of the platform's website).
+   */
+  switchAccount?: { label: string; note: string };
 }
 
 /**

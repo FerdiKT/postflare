@@ -22,6 +22,8 @@ describe("facebook", () => {
     expect(url.searchParams.get("redirect_uri")).toBe("https://pf.example.com/oauth/facebook/callback");
     expect(url.searchParams.get("state")).toBe("ST");
     expect(url.searchParams.get("scope")).toContain("pages_manage_posts");
+    // Nothing that forces a new login (it would end the user's session on the platform's website).
+    for (const k of ["force_reauth", "auth_type"]) expect(url.searchParams.has(k)).toBe(false);
   });
 
   it("uses config_id for Login for Business", async () => {

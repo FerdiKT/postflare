@@ -186,8 +186,11 @@ export interface Provider extends Omit<ProviderInfo, "auth" | "analytics" | "sta
   hotlinksMedia?: boolean;
   /** The platform only accepts redirect URLs ending in "/" (TikTok for Business). */
   redirectTrailingSlash?: boolean;
-  /** Build the authorization URL (oauth2). `codeChallenge` is S256 PKCE of `codeVerifier`. */
-  authorize?(ctx: ProviderContext, p: { state: string; codeVerifier: string; codeChallenge: string }): Promise<string> | string;
+  /**
+   * Build the authorization URL (oauth2). `codeChallenge` is S256 PKCE of `codeVerifier`. `switchAccount`: the user
+   * chose "use a different account" (only for providers with `switchAccount`, see ProviderInfo).
+   */
+  authorize?(ctx: ProviderContext, p: { state: string; codeVerifier: string; codeChallenge: string; switchAccount?: boolean }): Promise<string> | string;
   /** Exchange the callback for one or more accounts (e.g. every Facebook page the user manages). */
   callback?(
     ctx: ProviderContext,

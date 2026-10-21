@@ -7,9 +7,17 @@ session, plus `X-Workspace-Id`), or `Authorization: Bearer pf_...` (an API key b
 Profile). Every endpoint is workspace-scoped: ids of other workspaces answer 404. Permissions are listed per endpoint
 (catalog: [workspaces-spec.md](workspaces-spec.md)).
 
-This file documents the account group, App Store campaign, hosted mode (plans, billing, sign-up), bot protection, iOS app and media URL endpoints in detail
+This file documents the account connection, account group, App Store campaign, hosted mode (plans, billing, sign-up), bot protection, iOS app and media URL endpoints in detail
 and lists the changes they brought to existing endpoints. The rest of the API (accounts, media, posts, analytics, playbooks, users, workspaces) is summarized in the
 README ("API & MCP", "Analytics", "Playbooks") and typed in `shared/types.ts`.
+
+## Connecting accounts
+
+- `GET /connect/:provider/url` (`accounts.manage`) → `{ url }`: the platform's authorization URL (OAuth providers).
+  `?switchAccount=1` asks the platform to show its login again so another account can be picked; only providers whose
+  `ProviderInfo.switchAccount` (`{ label, note }`) is set honour it, the others ignore it. Instagram (Instagram login)
+  then adds `force_reauth=true`, which signs the user out of instagram.com in that browser: the default link never
+  does. The connect dialog shows it as a "Use a different Instagram account" link with that warning.
 
 ## Account groups
 

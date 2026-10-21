@@ -89,11 +89,17 @@ export const instagramStandalone: Provider = {
   capabilities: instagramCapabilities,
   validate: instagramValidate,
 
-  authorize(ctx, { state }) {
+  // force_reauth makes Instagram ask for credentials even when the browser is signed in, and it ends that
+  // instagram.com session: only on request ("Use a different Instagram account"), never by default.
+  switchAccount: {
+    label: "Use a different Instagram account",
+    note: "Instagram asks you to sign in again. This signs you out of instagram.com in this browser.",
+  },
+
+  authorize(ctx, { state, switchAccount }) {
     requireApp(ctx, "Instagram", "clientId", "clientSecret");
     const u = new URL("https://www.instagram.com/oauth/authorize");
-    // Same shape as the "Embed URL" in Meta's dashboard; force_reauth shows the web login instead of a stale session.
-    u.searchParams.set("force_reauth", "true");
+    if (switchAccount) u.searchParams.set("force_reauth", "true");
     u.searchParams.set("client_id", ctx.app.clientId);
     u.searchParams.set("redirect_uri", ctx.redirectUri);
     u.searchParams.set("response_type", "code");

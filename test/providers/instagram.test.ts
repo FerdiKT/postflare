@@ -33,6 +33,7 @@ describe("instagram (facebook login)", () => {
     expect(url.searchParams.get("scope")).toContain("instagram_content_publish");
     expect(url.searchParams.get("redirect_uri")).toBe("https://pf.example.com/oauth/instagram/callback");
     expect(url.searchParams.get("state")).toBe("S");
+    for (const k of ["force_reauth", "auth_type"]) expect(url.searchParams.has(k)).toBe(false);
   });
 
   it("returns one account per linked Instagram account", async () => {

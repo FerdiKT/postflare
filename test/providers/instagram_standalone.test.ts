@@ -20,6 +20,17 @@ describe("instagram (instagram login)", () => {
     expect(url.searchParams.get("scope")).toBe("instagram_business_basic,instagram_business_content_publish,instagram_business_manage_comments,instagram_business_manage_insights");
     expect(url.searchParams.get("redirect_uri")).toBe("https://pf.example.com/oauth/instagram_standalone/callback");
     expect(url.searchParams.get("state")).toBe("S");
+    // force_reauth would sign the browser out of instagram.com: never part of the default connect link.
+    expect(url.searchParams.has("force_reauth")).toBe(false);
+  });
+
+  it("forces the Instagram login only when the user asks for a different account", async () => {
+    expect(instagramStandalone.switchAccount?.note).toMatch(/signs you out of instagram\.com/);
+    const url = new URL(
+      await instagramStandalone.authorize!(testContext(mf([]).fetch, APP, "instagram_standalone"), { state: "S", codeVerifier: "v", codeChallenge: "c", switchAccount: true }),
+    );
+    expect(url.searchParams.get("force_reauth")).toBe("true");
+    expect(url.searchParams.get("client_id")).toBe("IGAPP");
   });
 
   it("exchanges the code for a long-lived token and returns the account", async () => {

@@ -116,7 +116,10 @@ accountRoutes.post("/connect/:provider", requirePermission("accounts.manage"), f
   }
 });
 
-/** Start an OAuth flow: returns the platform authorization URL. */
+/**
+ * Start an OAuth flow: returns the platform authorization URL. `?switchAccount=1` asks the platform to show its login
+ * again so another account can be picked (only providers with `switchAccount`; ignored by the others).
+ */
 accountRoutes.get("/connect/:provider/url", requirePermission("accounts.manage"), forbidInDemoWorkspace("Connecting accounts"), async (c) => {
   const provider = getProvider(c.req.param("provider"));
   if (!provider?.authorize) return c.json({ error: "This platform connects with credentials" }, 400);
@@ -126,7 +129,8 @@ accountRoutes.get("/connect/:provider/url", requirePermission("accounts.manage")
     const ctx = await providerContext(c.env, provider, { requestUrl: c.req.url });
     const state = randomToken(24);
     const codeVerifier = randomToken(48);
-    const url = await provider.authorize(ctx, { state, codeVerifier, codeChallenge: await pkceChallenge(codeVerifier) });
+    const switchAccount = !!provider.switchAccount && ["1", "true"].includes(c.req.query("switchAccount") ?? "");
+    const url = await provider.authorize(ctx, { state, codeVerifier, codeChallenge: await pkceChallenge(codeVerifier), switchAccount });
     // The callback saves into this workspace, and only for this user.
     await c.env.DB.prepare(
       "INSERT INTO oauth_states (state, provider, code_verifier, user_id, workspace_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",

@@ -31,6 +31,8 @@ describe("threads", () => {
     expect(url.searchParams.get("redirect_uri")).toBe("https://pf.example.com/oauth/threads/callback");
     expect(url.searchParams.get("response_type")).toBe("code");
     expect(url.searchParams.get("state")).toBe("S");
+    // Nothing that forces a new login (it would end the user's session on the platform's website).
+    for (const k of ["force_reauth", "auth_type"]) expect(url.searchParams.has(k)).toBe(false);
   });
 
   it("exchanges the code for a long-lived token", async () => {

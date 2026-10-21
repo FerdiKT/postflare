@@ -44,14 +44,15 @@ export function ConnectDialog({ open, onClose, initialProvider }: { open: boolea
     setSelected(initialProvider ? (providerMap.get(initialProvider) ?? null) : null);
     if (initialProvider) {
       const p = providerMap.get(initialProvider);
-      if (p && p.enabled && p.auth === "oauth2" && p.configured) void startOAuth(p);
+      // Platforms that offer "use a different account" wait on the Continue screen so the choice can be made.
+      if (p && p.enabled && p.auth === "oauth2" && p.configured && !p.switchAccount) void startOAuth(p);
     }
   }, [open, initialProvider]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function startOAuth(p: Provider) {
+  async function startOAuth(p: Provider, switchAccount = false) {
     setRedirecting(p.id);
     try {
-      const { url } = await api.connect.url(p.id);
+      const { url } = await api.connect.url(p.id, { switchAccount });
       setAuthUrl(url);
       setSelected(p);
       window.location.href = url;
@@ -62,7 +63,7 @@ export function ConnectDialog({ open, onClose, initialProvider }: { open: boolea
   }
 
   function pick(p: Provider) {
-    if (p.auth === "oauth2" && p.configured) void startOAuth(p);
+    if (p.auth === "oauth2" && p.configured && !p.switchAccount) void startOAuth(p);
     else setSelected(p);
   }
 
@@ -90,10 +91,25 @@ export function ConnectDialog({ open, onClose, initialProvider }: { open: boolea
           <CredentialsForm provider={selected} onDone={onClose} />
         ) : (
           <div className="p-6 text-center">
-            <p className="text-sm text-zinc-500">Redirecting to {selected.name}…</p>
+            <p className="text-sm text-zinc-500">
+              {selected.switchAccount && !redirecting ? `Sign in with ${selected.name} to connect your account.` : `Redirecting to ${selected.name}…`}
+            </p>
             <Button className="mt-4" variant="primary" loading={redirecting === selected.id} onClick={() => startOAuth(selected)}>
               Continue with {selected.name}
             </Button>
+            {selected.switchAccount && (
+              <div className="mx-auto mt-4 max-w-md text-xs text-zinc-500">
+                <button
+                  type="button"
+                  className="font-medium text-zinc-700 underline underline-offset-2 hover:text-zinc-900 disabled:opacity-60 dark:text-zinc-300 dark:hover:text-white"
+                  disabled={!!redirecting}
+                  onClick={() => startOAuth(selected, true)}
+                >
+                  {selected.switchAccount.label}
+                </button>
+                <p className="mt-1">{selected.switchAccount.note}</p>
+              </div>
+            )}
             {authUrl && (
               <div className="mx-auto mt-6 max-w-md rounded-xl bg-zinc-50 p-4 text-left text-xs text-zinc-600 ring-1 ring-zinc-200 dark:bg-zinc-900 dark:text-zinc-400 dark:ring-zinc-800">
                 <p>

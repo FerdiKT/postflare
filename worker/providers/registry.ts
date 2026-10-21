@@ -68,6 +68,7 @@ export function providerInfo(p: Provider): ProviderInfo {
     composerNotice: p.composerNotice,
     status: p.status ?? "beta",
     statusNote: p.statusNote,
+    switchAccount: p.switchAccount,
     analytics: {
       post: !!(p.postMetrics && p.metrics?.post.length),
       account: !!(p.accountMetrics && p.metrics?.account.length),
