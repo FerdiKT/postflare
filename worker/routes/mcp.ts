@@ -38,11 +38,19 @@ export function mcpRoutes(api: { fetch: (req: Request, env: Env, ctx: ExecutionC
    * One URL path segment from a tool argument. Without encoding, an id like "../keys" or "x#" (e.g. from a prompt
    * injection) would reach other REST routes than the tool's (DELETE /api/workspaces/..., POST /api/keys...).
    */
-  const seg = (v: unknown) => {
-    const s = String(v ?? "");
-    if (!s || s === "." || s === "..") throw new Error(`Invalid id: ${s}`);
+  const seg = (v: unknown, name = "id") => {
+    if (v === undefined || v === null || v === "") throw new Error(`Missing ${name}`);
+    if (typeof v !== "string" && typeof v !== "number") throw new Error(`Invalid ${name}: expected a string`);
+    const s = String(v).trim();
+    if (!s || s === "." || s === "..") throw new Error(`Invalid ${name}: ${s}`);
     return encodeURIComponent(s);
   };
+
+  /**
+   * The post id of post tools. Agents often name it `postId` (as in refresh_metrics) instead of `id`; without the
+   * alias that read as an empty id and failed with "Invalid id" for perfectly valid ids like pst_JigXPHc1GeGPQqD2.
+   */
+  const postSeg = (a: any) => seg(a.id ?? a.postId, "id (the post id, e.g. pst_...)");
 
   const toMs = (v: unknown) => {
     if (v === "now" || v === null || v === undefined) return v ?? null;
@@ -95,22 +103,34 @@ export function mcpRoutes(api: { fetch: (req: Request, env: Env, ctx: ExecutionC
         "List connected social accounts. Use the account id when creating posts. `status` is the publishing state; " +
         "`analytics` is the analytics collection state (ok, pending, reconnect_required, not_supported, error) and `followers` the latest follower count. " +
         "`group` is the account's group (brand / project, see list_account_groups; absent when ungrouped); pass `group` (id or name, \"none\" = ungrouped) to list one group's accounts, " +
-        "e.g. to post to every account of a brand.",
+        "e.g. to post to every account of a brand. Pass `platform` to list one platform's accounts (both filters combine).",
       inputSchema: {
         type: "object",
-        properties: { group: { type: "string", description: "Only accounts of this group: group id or name (case-insensitive); \"none\" for ungrouped accounts." } },
+        properties: {
+          group: { type: "string", description: "Only accounts of this group: group id or name (case-insensitive); \"none\" for ungrouped accounts." },
+          platform: {
+            type: "string",
+            description:
+              "Only accounts of this platform: provider id (see list_platforms, e.g. x, instagram_standalone, facebook) or an alias: " +
+              `${Object.keys(PLATFORM_ALIASES).join(", ")}. Comma-separate several.`,
+          },
+        },
       },
       run: async (c, a) => {
         const [accounts, groups] = (await Promise.all([call(c, "GET", "/accounts"), call(c, "GET", "/account-groups")])) as [AccountDTO[], AccountGroupDTO[]];
         const byId = new Map(groups.map((g) => [g.id, g]));
         let list = accounts;
+        if (a?.platform !== undefined && a.platform !== null && a.platform !== "") {
+          const wanted = platformIds(String(a.platform));
+          list = list.filter((x) => wanted.has(x.provider));
+        }
         if (a?.group !== undefined && a.group !== null && a.group !== "") {
           const ref = String(a.group).trim();
-          if (ref.toLowerCase() === "none") list = accounts.filter((x) => !x.groupId || !byId.has(x.groupId));
+          if (ref.toLowerCase() === "none") list = list.filter((x) => !x.groupId || !byId.has(x.groupId));
           else {
             const g = groups.find((x) => x.id === ref) ?? groups.find((x) => x.name.toLowerCase() === ref.toLowerCase());
             if (!g) throw new Error(`No account group matches "${ref}". Groups: ${groups.map((x) => `${x.name} (${x.id})`).join(", ") || "none yet"}`);
-            list = accounts.filter((x) => x.groupId === g.id);
+            list = list.filter((x) => x.groupId === g.id);
           }
         }
         return list.map((x) => compactAccount(x, x.groupId ? byId.get(x.groupId) : undefined));
@@ -131,7 +151,7 @@ export function mcpRoutes(api: { fetch: (req: Request, env: Env, ctx: ExecutionC
         required: ["accountId", "key"],
       },
       run: (c, a) =>
-        call(c, "GET", `/accounts/${seg(a.accountId)}/options/${seg(a.key)}?settings=${encodeURIComponent(JSON.stringify(a.settings ?? {}))}`),
+        call(c, "GET", `/accounts/${seg(a.accountId, "accountId")}/options/${seg(a.key, "key")}?settings=${encodeURIComponent(JSON.stringify(a.settings ?? {}))}`),
     },
     upload_media_from_url: {
       description: "Import an image or video from a public URL into the media library. Returns the media id to attach to posts.",
@@ -160,7 +180,7 @@ export function mcpRoutes(api: { fetch: (req: Request, env: Env, ctx: ExecutionC
     get_upload_link: {
       description: "List the media uploaded through an upload link (ids to attach to posts).",
       inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
-      run: (c, a) => call(c, "GET", `/upload-links/${seg(a.id)}`),
+      run: (c, a) => call(c, "GET", `/upload-links/${seg(a.id ?? a.uploadLinkId)}`),
     },
     list_media: {
       description: "List the media library (newest first).",
@@ -243,7 +263,7 @@ export function mcpRoutes(api: { fetch: (req: Request, env: Env, ctx: ExecutionC
     get_post: {
       description: "Get a post with its publishing log and, when it is about an app, its tracked link (`campaign`: trackedUrl, ct, clicks, App Store downloads, proceeds).",
       inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
-      run: (c, a) => call(c, "GET", `/posts/${seg(a.id)}`),
+      run: (c, a) => call(c, "GET", `/posts/${postSeg(a)}`),
     },
     list_apps: {
       description:
@@ -281,18 +301,18 @@ export function mcpRoutes(api: { fetch: (req: Request, env: Env, ctx: ExecutionC
         },
         required: ["id"],
       },
-      run: (c, { id, scheduledAt, ...rest }) =>
-        call(c, "PATCH", `/posts/${seg(id)}`, { ...rest, ...(scheduledAt !== undefined ? { scheduledAt: toMs(scheduledAt) } : {}) }),
+      run: (c, { id, postId, scheduledAt, ...rest }) =>
+        call(c, "PATCH", `/posts/${postSeg({ id, postId })}`, { ...rest, ...(scheduledAt !== undefined ? { scheduledAt: toMs(scheduledAt) } : {}) }),
     },
     cancel_post: {
       description: "Cancel a scheduled post.",
       inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
-      run: (c, a) => call(c, "POST", `/posts/${seg(a.id)}/cancel`),
+      run: (c, a) => call(c, "POST", `/posts/${postSeg(a)}/cancel`),
     },
     retry_post: {
       description: "Retry a failed post now.",
       inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
-      run: (c, a) => call(c, "POST", `/posts/${seg(a.id)}/retry`),
+      run: (c, a) => call(c, "POST", `/posts/${postSeg(a)}/retry`),
     },
     resolve_post: {
       description:
@@ -304,7 +324,7 @@ export function mcpRoutes(api: { fetch: (req: Request, env: Env, ctx: ExecutionC
         properties: { id: { type: "string" }, published: { type: "boolean" }, url: { type: "string" } },
         required: ["id", "published"],
       },
-      run: (c, a) => call(c, "POST", `/posts/${seg(a.id)}/resolve`, { published: a.published === true, url: a.url ?? null }),
+      run: (c, a) => call(c, "POST", `/posts/${postSeg(a)}/resolve`, { published: a.published === true, url: a.url ?? null }),
     },
     get_analytics_summary: {
       description:
@@ -354,9 +374,9 @@ export function mcpRoutes(api: { fetch: (req: Request, env: Env, ctx: ExecutionC
         "watching, can exceed 1 on rewatches) and `trafficSources` = views per insightTrafficSourceType (YT_SEARCH, RELATED_VIDEO, SHORTS, EXT_URL...). " +
         "Posts with a tracked App Store link add `campaign`: clicks, installs (first-time downloads), redownloads, proceeds. " +
         CAMPAIGN_NOTE,
-      inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+      inputSchema: { type: "object", properties: { id: { type: "string", description: "Post id (pst_...), as returned by list_posts / get_top_posts." } }, required: ["id"] },
       run: async (c, a) => {
-        const m = await call(c, "GET", `/posts/${seg(a.id)}/metrics`);
+        const m = await call(c, "GET", `/posts/${postSeg(a)}/metrics`);
         const rate = rateOf(m.metrics);
         return drop({
           postId: m.postId,
@@ -432,7 +452,7 @@ export function mcpRoutes(api: { fetch: (req: Request, env: Env, ctx: ExecutionC
         const q = new URLSearchParams();
         if (a.version) q.set("version", String(a.version));
         if (a.accountId) q.set("accountId", String(a.accountId));
-        const p = await call(c, "GET", `/playbooks/${seg(a.id)}?${q}`);
+        const p = await call(c, "GET", `/playbooks/${seg(a.id ?? a.playbookId)}?${q}`);
         return { id: p.id, version: p.version, name: p.name, goal: p.goal, inputs: p.inputs, checklist: p.checklist, prompt: p.prompt };
       },
     },
@@ -491,7 +511,7 @@ export function mcpRoutes(api: { fetch: (req: Request, env: Env, ctx: ExecutionC
     delete_post: {
       description: "Delete a post from Postflare (does not delete it from the platform).",
       inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
-      run: (c, a) => call(c, "DELETE", `/posts/${seg(a.id)}`),
+      run: (c, a) => call(c, "DELETE", `/posts/${postSeg(a)}`),
     },
   };
 
@@ -542,7 +562,7 @@ export function mcpRoutes(api: { fetch: (req: Request, env: Env, ctx: ExecutionC
           const tool = tools[msg.params?.name];
           if (!tool) return fail(-32602, `Unknown tool ${msg.params?.name}`);
           try {
-            const result = await tool.run(c, msg.params.arguments ?? {});
+            const result = await tool.run(c, toolArgs(msg.params.arguments));
             return reply({ content: [{ type: "text", text: JSON.stringify(result, null, 2) }] });
           } catch (err) {
             return reply({ content: [{ type: "text", text: (err as Error).message }], isError: true });
@@ -561,6 +581,43 @@ export function mcpRoutes(api: { fetch: (req: Request, env: Env, ctx: ExecutionC
   });
 
   return mcp;
+}
+
+/** Tool arguments: some clients send them as a JSON string instead of an object. */
+function toolArgs(v: unknown): Record<string, unknown> {
+  if (typeof v === "string") {
+    try {
+      v = JSON.parse(v);
+    } catch {
+      throw new Error("Invalid arguments: expected a JSON object");
+    }
+  }
+  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+}
+
+/** Platform names agents use for list_accounts `platform`, mapped to provider ids. */
+const PLATFORM_ALIASES: Record<string, string[]> = {
+  instagram: ["instagram", "instagram_standalone"],
+  ig: ["instagram", "instagram_standalone"],
+  twitter: ["x"],
+  fb: ["facebook"],
+  tiktok: ["tiktok", "tiktok_business"],
+  linkedin: ["linkedin", "linkedin_page"],
+  yt: ["youtube"],
+  "google-business": ["gmb"],
+};
+
+/** Provider ids of a `platform` filter: comma-separated provider ids or aliases (case-insensitive, "-"/" " = "_"). */
+function platformIds(ref: string): Set<string> {
+  const out = new Set<string>();
+  for (const raw of ref.split(",")) {
+    const k = raw.trim().toLowerCase();
+    if (!k) continue;
+    const alias = PLATFORM_ALIASES[k];
+    if (alias) alias.forEach((id) => out.add(id));
+    else out.add(k.replace(/[\s-]+/g, "_"));
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------------------------------------------

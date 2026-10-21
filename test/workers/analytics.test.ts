@@ -408,6 +408,38 @@ describe("MCP analytics tools", () => {
     await run("DELETE FROM post_metrics WHERE post_id = 'p1' AND captured_at = ?", at);
   });
 
+  it("get_post_metrics accepts real post ids, `postId` and string arguments (regression: \"Invalid id\")", async () => {
+    const id = "pst_JigXPHc1GeGPQqD2-x";
+    await post(id, "ws_an_a", "acc_an_x", from - 50 * DAY, { metrics: { impressions: 10, likes: 1 } });
+    try {
+      for (const args of [{ id }, { postId: id }, { id: ` ${id} ` }, JSON.stringify({ id })]) {
+        const r = await tool(viewerKey, "get_post_metrics", args);
+        expect(r.error, JSON.stringify(args)).toBeNull();
+        expect(r.data).toMatchObject({ postId: id, metrics: { impressions: 10 } });
+      }
+      expect((await tool(viewerKey, "get_post", { postId: id })).data).toMatchObject({ id });
+      expect((await tool(viewerKey, "get_post_metrics", {})).error).toMatch(/^Missing id/);
+      expect((await tool(viewerKey, "get_post_metrics", { id: { x: 1 } })).error).toMatch(/^Invalid id/);
+      expect((await tool(viewerKey, "get_post_metrics", { id: ".." })).error).toMatch(/^Invalid id/);
+    } finally {
+      await run("DELETE FROM posts WHERE id = ?", id);
+    }
+  });
+
+  it("list_accounts filters by platform id and documented aliases (regression: filter was ignored)", async () => {
+    const ids = async (args: Record<string, unknown>) => (await tool(viewerKey, "list_accounts", args)).data.map((a: any) => a.id).sort();
+    expect(await ids({ platform: "youtube" })).toEqual(["acc_an_yt"]);
+    expect(await ids({ platform: "X" })).toEqual(["acc_an_x"]);
+    expect(await ids({ platform: "twitter" })).toEqual(["acc_an_x"]);
+    expect(await ids({ platform: "yt, webhook" })).toEqual(["acc_an_hook", "acc_an_yt"]);
+    expect(await ids({ platform: "instagram" })).toEqual([]);
+    expect(await ids({ platform: "" })).toEqual(["acc_an_hook", "acc_an_x", "acc_an_yt"]);
+    expect(await ids({ platform: "x", group: "none" })).toEqual(["acc_an_x"]);
+    const list = await call({ key: viewerKey }, "/mcp", { body: { jsonrpc: "2.0", id: 1, method: "tools/list" } });
+    const schema = list.json.result.tools.find((t: any) => t.name === "list_accounts").inputSchema;
+    expect(schema.properties.platform.description).toContain("twitter");
+  });
+
   it("refresh_metrics needs posts.write and exactly one target", async () => {
     expect((await tool(ownerKey, "refresh_metrics", {})).error).toContain("either postId or accountId");
     expect((await tool(viewerKey, "refresh_metrics", { postId: "p1" })).error).toMatch(/permission/i);

@@ -175,6 +175,9 @@ describe("account groups", () => {
     expect((await tool("list_accounts", { group: "party games" })).map((a: any) => a.id).sort()).toEqual([acc.ig, acc.yt].sort());
     expect((await tool("list_accounts", { group: ids.postflare })).map((a: any) => a.id)).toEqual([acc.x]);
     expect(await tool("list_accounts", { group: "none" })).toEqual([]);
+    // Both filters combine: platform first, then group.
+    expect((await tool("list_accounts", { group: "party games", platform: "webhook" })).map((a: any) => a.id).sort()).toEqual([acc.ig, acc.yt].sort());
+    expect(await tool("list_accounts", { group: "party games", platform: "x" })).toEqual([]);
     await expect(tool("list_accounts", { group: "Nope" })).rejects.toThrow(/No account group matches "Nope"/);
     expect(await tool("list_account_groups")).toEqual([
       { id: ids.postflare, name: "Postflare", accounts: 1 },
