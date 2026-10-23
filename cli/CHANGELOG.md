@@ -12,6 +12,26 @@ file is maintained by release-please from Conventional Commits touching `cli/`.
   `post --playbook <id>@<version> --variant A`, `posts edit --playbook/--no-playbook/--variant`, `posts --playbook`.
   The bundled skill tells agents to look up a playbook before writing and to attribute posts.
 
+## [0.4.0](https://github.com/FerdiKT/postflare/compare/cli-v0.3.0...cli-v0.4.0) (2026-10-23)
+
+
+### Features
+
+* **cli:** account groups (groups, accounts group, --group, group:&lt;name&gt; selector) ([df6b0bb](https://github.com/FerdiKT/postflare/commit/df6b0bb932f9546217328c9a902a564b8b4bf660))
+* **cli:** apps, links, --app and installs/revenue in analytics ([e4148ad](https://github.com/FerdiKT/postflare/commit/e4148adc1bace2249111697abf8dfc10c903294a))
+* **cli:** print where to manage the plan on 402 plan_limit errors ([f4e2c3f](https://github.com/FerdiKT/postflare/commit/f4e2c3fea99f6833654e1ce6d546176fd8624a8d))
+* serve media from an R2 custom domain (MEDIA_PUBLIC_URL) and add image thumbnails ([3e31e2b](https://github.com/FerdiKT/postflare/commit/3e31e2b199a1e3474005dd8fb204a8c4b2fc5f02))
+
+
+### Bug Fixes
+
+* **accounts:** record reconnects and keep working analytics on reconnect ([d0aec23](https://github.com/FerdiKT/postflare/commit/d0aec23adda45e507014a6658861b6366041ec89))
+
+
+### Documentation
+
+* account groups (API, permissions, README, CLI, skill) ([13a4e4c](https://github.com/FerdiKT/postflare/commit/13a4e4ccaa15066188f1ce47cccac7bdeecf581c))
+
 ## [0.3.0](https://github.com/FerdiKT/postflare/compare/cli-v0.2.0...cli-v0.3.0) (2026-10-17)
 
 
