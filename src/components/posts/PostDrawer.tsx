@@ -4,10 +4,9 @@ import { Link } from "react-router";
 import { api } from "../../lib/api";
 import { useApp } from "../../lib/app";
 import { cn } from "../../lib/format";
-import { useMediaLookup } from "../../lib/mediaCache";
 import { useSession } from "../../lib/session";
 import { playbookLabel, usePlaybookList } from "../../lib/playbooks";
-import { formatDateTime } from "../../lib/time";
+import { formatDateTime, relativeTime } from "../../lib/time";
 import type { FieldDef, PostDTO, PostWithLogs } from "../../lib/types";
 import { invalidate, useFetch } from "../../lib/useFetch";
 import { useComposer } from "../../pages/composer/ComposerProvider";
@@ -20,7 +19,7 @@ import { Dialog, Drawer } from "../ui/Dialog";
 import { Field, Input } from "../ui/Form";
 import { Skeleton, StatusBadge } from "../ui/Misc";
 import { useToast } from "../ui/Toast";
-import { MediaThumb } from "./MediaThumb";
+import { PlatformPreview } from "./PlatformPreview";
 
 interface DrawerApi {
   openPost: (ids: string | string[]) => void;
@@ -185,8 +184,9 @@ function settingValue(field: FieldDef | undefined, v: unknown): string {
 
 function PostBody({ post }: { post: PostWithLogs }) {
   const { tz, accountMap, providerMap } = useApp();
-  const fields = providerMap.get(accountMap.get(post.accountId)?.provider ?? "")?.settingsFields ?? [];
-  const media = useMediaLookup([...post.media, ...post.thread.flatMap((t) => t.media)]);
+  const account = accountMap.get(post.accountId);
+  const provider = providerMap.get(account?.provider ?? "");
+  const fields = provider?.settingsFields ?? [];
   const settings = Object.entries(post.settings).filter(([, v]) => v !== "" && v !== null && v !== undefined && !(Array.isArray(v) && !v.length));
   const when = post.publishedAt ?? post.scheduledAt;
   return (
@@ -225,18 +225,17 @@ function PostBody({ post }: { post: PostWithLogs }) {
       )}
 
       <section>
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">Content</h3>
-        {post.content ? (
-          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{post.content}</p>
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">Preview</h3>
+        {account && provider ? (
+          <PlatformPreview
+            key={post.id}
+            account={account}
+            provider={provider}
+            post={post}
+            time={post.status === "published" && post.publishedAt ? relativeTime(post.publishedAt) : post.status === "draft" ? "Draft" : when ? formatDateTime(when, tz) : ""}
+          />
         ) : (
-          <p className="text-sm italic text-zinc-400">No text</p>
-        )}
-        {post.media.length > 0 && (
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            {post.media.map((id) => (
-              <MediaThumb key={id} media={media(id)} className="aspect-square w-full rounded-lg" controls />
-            ))}
-          </div>
+          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{post.content || <span className="italic text-zinc-400">No text</span>}</p>
         )}
       </section>
 
@@ -248,26 +247,6 @@ function PostBody({ post }: { post: PostWithLogs }) {
         <section>
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">Tracked App Store link</h3>
           <PostCampaign link={post.campaign} />
-        </section>
-      )}
-
-      {post.thread.length > 0 && (
-        <section>
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">Follow-ups</h3>
-          <ol className="space-y-3 border-l-2 border-zinc-200 pl-4 dark:border-zinc-700">
-            {post.thread.map((t, i) => (
-              <li key={i} className="text-sm">
-                <p className="whitespace-pre-wrap break-words">{t.content || <span className="italic text-zinc-400">Media only</span>}</p>
-                {t.media.length > 0 && (
-                  <div className="mt-2 flex gap-2">
-                    {t.media.map((id) => (
-                      <MediaThumb key={id} media={media(id)} className="size-16 rounded-md" />
-                    ))}
-                  </div>
-                )}
-              </li>
-            ))}
-          </ol>
         </section>
       )}
 

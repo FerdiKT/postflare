@@ -8,7 +8,7 @@ const stack: symbol[] = [];
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
 /** Shared overlay behaviour: portal, Escape (topmost only), focus trap, scroll lock, focus restore. */
-function useOverlay(open: boolean, onClose: () => void, panel: React.RefObject<HTMLDivElement | null>) {
+export function useOverlay(open: boolean, onClose: () => void, panel: React.RefObject<HTMLDivElement | null>) {
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   useEffect(() => {

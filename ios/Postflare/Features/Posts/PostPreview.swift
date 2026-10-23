@@ -53,7 +53,7 @@ struct PreviewContext {
     }
 }
 
-/// How the post will look on its platform, modelled on the web composer's previews (src/pages/composer/Preview.tsx).
+/// How the post will look on its platform, same layouts as the web previews (src/components/posts/PlatformPreview.tsx).
 /// Letter glyphs and system symbols only, no platform logos.
 struct PlatformPreview: View {
     var ctx: PreviewContext

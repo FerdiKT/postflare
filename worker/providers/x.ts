@@ -17,54 +17,8 @@ const METRICS_BATCH = 100;
 const STANDARD_LIMIT = 280;
 const PREMIUM_LIMIT = 25_000;
 
-// ---------- weighted character counting (twitter-text v3 config) ----------
-
-/** Code point ranges that weigh 1; everything else weighs 2. */
-const LIGHT_RANGES: Array<[number, number]> = [
-  [0x0000, 0x10ff],
-  [0x2000, 0x200d],
-  [0x2010, 0x201f],
-  [0x2032, 0x2037],
-];
-const URL_LENGTH = 23;
-const BARE_TLDS =
-  "com|net|org|io|co|app|dev|ai|me|ly|gg|tv|xyz|info|biz|edu|gov|us|uk|de|fr|es|it|nl|ca|au|in|jp|ru|br|eu|tr|link|site|online|store|blog|news|page|so|sh";
-/** URLs and bare domains (X auto-links them). Also used by lib/usage.ts (`has_url`). */
-export const URL_RE = new RegExp(
-  `(?<![@\\w.])(?:https?:\\/\\/[^\\s]+|(?:[a-z0-9-]+\\.)+(?:${BARE_TLDS})\\b(?:\\/[^\\s]*)?)`,
-  "gi",
-);
-const EMOJI_RE = /\p{Emoji_Presentation}|\p{Regional_Indicator}|️|⃣|‍/u;
-const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-
-function weigh(text: string): number {
-  let w = 0;
-  for (const { segment } of segmenter.segment(text)) {
-    if (EMOJI_RE.test(segment)) {
-      w += 2;
-      continue;
-    }
-    for (const ch of segment) {
-      const cp = ch.codePointAt(0)!;
-      w += LIGHT_RANGES.some(([a, b]) => cp >= a && cp <= b) ? 1 : 2;
-    }
-  }
-  return w;
-}
-
-/** X's weighted length: URLs count 23, CJK/emoji count 2, most Latin text 1. */
-export function xWeightedLength(input: string): number {
-  const text = input.normalize("NFC");
-  let total = 0;
-  let last = 0;
-  for (const m of text.matchAll(URL_RE)) {
-    // Trailing punctuation is not part of the URL.
-    const url = m[0].replace(/[.,!?;:'")\]]+$/, "");
-    total += weigh(text.slice(last, m.index)) + URL_LENGTH;
-    last = m.index! + url.length;
-  }
-  return total + weigh(text.slice(last));
-}
+export { URL_RE, xWeightedLength } from "../../shared/xText";
+import { xWeightedLength } from "../../shared/xText";
 
 const limitFor = (settings: Record<string, any>) => (settings.premium ? PREMIUM_LIMIT : STANDARD_LIMIT);
 

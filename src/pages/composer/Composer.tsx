@@ -23,7 +23,7 @@ import type { ComposerOptions } from "./ComposerProvider";
 import { ItemEditor } from "./ItemEditor";
 import { PlaybookPanel, PlaybookPicker, type PlaybookRef } from "./PlaybookPicker";
 import { attributeErrors, checkAccount, effectiveItem, emptyItem, type ComposerState, type Issue, type Item } from "./model";
-import { Preview } from "./Preview";
+import { PlatformPreview } from "../../components/posts/PlatformPreview";
 import { SchedulePicker, defaultScheduleTime } from "./SchedulePicker";
 
 type Mode = "schedule" | "now" | "draft";
@@ -450,11 +450,12 @@ export default function Composer({ options, onClose }: { options: ComposerOption
               )}
             </div>
             {previewAccount && providerOf(previewAccount) ? (
-              <Preview
+              <PlatformPreview
+                key={previewAccount.id}
                 account={previewAccount}
                 provider={providerOf(previewAccount)!}
-                item={effectiveItem(state, previewAccount.id, providerOf(previewAccount))}
-                settings={state.settings[previewAccount.id] ?? {}}
+                post={{ ...effectiveItem(state, previewAccount.id, providerOf(previewAccount)), settings: state.settings[previewAccount.id] ?? {} }}
+                time={formatDateTime(scheduledAt, tz)}
               />
             ) : (
               <div className="rounded-xl border border-dashed border-zinc-300 px-4 py-10 text-center text-sm text-zinc-400 dark:border-zinc-700">
