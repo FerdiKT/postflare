@@ -3,7 +3,7 @@ import { requireInstancePermission, type AppEnv } from "../lib/auth";
 import { encryptJson } from "../lib/crypto";
 import { getAppConfig } from "../lib/accounts";
 import { META_PROVIDERS, dataDeletionUri } from "../lib/meta-deletion";
-import { baseUrl, experimentalEnabled } from "../lib/settings";
+import { baseUrl, experimentalEnabled, providerAllowed } from "../lib/settings";
 import { now } from "../lib/util";
 import { getProvider, providerInfo, providers, redirectUriFor } from "../providers/registry";
 
@@ -19,6 +19,7 @@ platformRoutes.get("/providers", async (c) => {
   const configured = new Set(results.map((r) => r.provider));
   const base = await baseUrl(c.env, c.req.url);
   const experimental = await experimentalEnabled(c.env.DB);
+  const allowed = c.var.workspace?.allowedProviders ?? null;
   return c.json(
     providers.map((p) => ({
       ...providerInfo(p),
@@ -27,6 +28,8 @@ platformRoutes.get("/providers", async (c) => {
       // Meta apps also ask for a data deletion callback URL.
       ...((META_PROVIDERS as readonly string[]).includes(p.id) && { dataDeletionUri: dataDeletionUri(base) }),
       enabled: p.status !== "experimental" || experimental,
+      // The current workspace may connect it and post to it (workspaces.allowed_providers).
+      allowed: providerAllowed(allowed, p.id),
     })),
   );
 });

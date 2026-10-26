@@ -4,6 +4,7 @@ import { deleteAvatars } from "./avatars";
 import { mediaKeys } from "./media";
 import { terminateWorkflow } from "./posts";
 import { ROLE, isDemoRole, parsePermissions } from "./permissions";
+import { defaultProvidersStatement } from "./settings";
 import { newId, now } from "./util";
 
 export interface RoleRow {
@@ -96,6 +97,7 @@ export function createWorkspaceStatements(db: D1Database, name: string, userId: 
         .prepare("INSERT INTO workspace_members (workspace_id, user_id, role_id, created_at) VALUES (?, ?, ?, ?)")
         .bind(id, userId, ROLE.owner, t),
       ...trialStatements(db, id, userId, t),
+      defaultProvidersStatement(db, id),
     ],
   };
 }

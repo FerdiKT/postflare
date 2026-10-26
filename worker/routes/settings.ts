@@ -2,7 +2,19 @@ import { Hono } from "hono";
 import type { ApiKeyDTO } from "../../shared/types";
 import { enforce } from "../billing/entitlements";
 import { createApiKey, forbidDemoUser, isInstanceAdmin, requireInstancePermission, requirePermission, wsId, type AppEnv } from "../lib/auth";
-import { EXPERIMENTAL_SETTING, MEDIA_RETENTION_SETTING, baseUrl, experimentalEnabled, getSetting, mediaRetentionDays, setSetting } from "../lib/settings";
+import {
+  EXPERIMENTAL_SETTING,
+  MEDIA_RETENTION_SETTING,
+  WORKSPACE_PROVIDERS_SETTING,
+  allowedProvidersInput,
+  baseUrl,
+  experimentalEnabled,
+  getSetting,
+  mediaRetentionDays,
+  parseAllowedProviders,
+  setSetting,
+} from "../lib/settings";
+import { providers } from "../providers/registry";
 
 export const settingsRoutes = new Hono<AppEnv>();
 
@@ -14,11 +26,14 @@ settingsRoutes.get("/settings", async (c) => {
     encryptionKeyFromSecret: !!c.env.SECRET_KEY,
     experimentalIntegrations: await experimentalEnabled(c.env.DB),
     mediaRetentionDays: await mediaRetentionDays(c.env.DB),
+    workspaceProviders: parseAllowedProviders(await getSetting(c.env.DB, WORKSPACE_PROVIDERS_SETTING)),
   });
 });
 
 settingsRoutes.put("/settings", requireInstancePermission("instance.settings.manage"), async (c) => {
-  const body = await c.req.json<{ publicUrl?: string; timezone?: string; experimentalIntegrations?: boolean; mediaRetentionDays?: number }>();
+  const body = await c.req.json<{ publicUrl?: string; timezone?: string; experimentalIntegrations?: boolean; mediaRetentionDays?: number; workspaceProviders?: string[] | null }>();
+  const workspaceProviders = body.workspaceProviders === undefined ? undefined : allowedProvidersInput(body.workspaceProviders, providers.map((p) => p.id));
+  if (body.workspaceProviders !== undefined && workspaceProviders === undefined) return c.json({ error: "workspaceProviders must be null or an array of platform ids" }, 400);
   if (body.mediaRetentionDays !== undefined) {
     const days = Number(body.mediaRetentionDays);
     if (!Number.isInteger(days) || days < 0 || days > 3650) return c.json({ error: "Media retention must be a whole number of days between 0 and 3650" }, 400);
@@ -45,6 +60,8 @@ settingsRoutes.put("/settings", requireInstancePermission("instance.settings.man
   if (body.experimentalIntegrations !== undefined) {
     await setSetting(c.env.DB, EXPERIMENTAL_SETTING, body.experimentalIntegrations === true ? "true" : "false");
   }
+  if (workspaceProviders === null) await c.env.DB.prepare("DELETE FROM settings WHERE key = ?").bind(WORKSPACE_PROVIDERS_SETTING).run();
+  else if (workspaceProviders) await setSetting(c.env.DB, WORKSPACE_PROVIDERS_SETTING, JSON.stringify(workspaceProviders));
   return c.json({ ok: true });
 });
 

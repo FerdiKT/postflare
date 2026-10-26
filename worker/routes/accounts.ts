@@ -107,7 +107,7 @@ accountRoutes.get("/accounts/:id/options/:key", requirePermission("posts.write")
 accountRoutes.post("/connect/:provider", requirePermission("accounts.manage"), forbidInDemoWorkspace("Connecting accounts"), async (c) => {
   const provider = getProvider(c.req.param("provider"));
   if (!provider?.connect) return c.json({ error: "This platform connects with OAuth" }, 400);
-  const blocked = await connectBlocked(c.env.DB, provider);
+  const blocked = await connectBlocked(c.env.DB, provider, c.var.workspace?.allowedProviders);
   if (blocked) return c.json({ error: blocked }, 403);
   const { values } = await c.req.json<{ values: Record<string, string> }>();
   for (const f of provider.credentialFields) {
@@ -131,7 +131,7 @@ accountRoutes.post("/connect/:provider", requirePermission("accounts.manage"), f
 accountRoutes.get("/connect/:provider/url", requirePermission("accounts.manage"), forbidInDemoWorkspace("Connecting accounts"), async (c) => {
   const provider = getProvider(c.req.param("provider"));
   if (!provider?.authorize) return c.json({ error: "This platform connects with credentials" }, 400);
-  const blocked = await connectBlocked(c.env.DB, provider);
+  const blocked = await connectBlocked(c.env.DB, provider, c.var.workspace?.allowedProviders);
   if (blocked) return c.json({ error: blocked }, 403);
   try {
     const ctx = await providerContext(c.env, provider, { requestUrl: c.req.url });

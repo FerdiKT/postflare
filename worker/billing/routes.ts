@@ -26,7 +26,8 @@ import type {
 import { requireInstancePermission, requirePermission, wsId, type AppEnv } from "../lib/auth";
 import { emailConfigured } from "../lib/email";
 import { isSignupMode, signupMode } from "../lib/signup";
-import { baseUrl } from "../lib/settings";
+import { allowedProvidersInput, baseUrl, parseAllowedProviders } from "../lib/settings";
+import { providers } from "../providers/registry";
 import { newId, now } from "../lib/util";
 import {
   SETTING,
@@ -65,10 +66,11 @@ interface WorkspaceBillingRow {
   billing_interval: BillingInterval | null;
   billing_exempt: number;
   billing_updated_at: number | null;
+  allowed_providers: string | null;
 }
 
 const WS_BILLING_SQL = `SELECT w.id, w.name, w.is_demo, w.created_at, w.plan_id, p.name AS plan_name, w.billing_status, w.trial_ends_at, w.current_period_end,
-  w.billing_provider, w.billing_customer_id, w.billing_subscription_id, w.billing_interval, w.billing_exempt, w.billing_updated_at, ${BILLING_COLUMNS}
+  w.billing_provider, w.billing_customer_id, w.billing_subscription_id, w.billing_interval, w.billing_exempt, w.billing_updated_at, w.allowed_providers, ${BILLING_COLUMNS}
   FROM workspaces w LEFT JOIN plans p ON p.id = w.plan_id`;
 
 const workspaceBilling = (db: D1Database, id: string) => db.prepare(`${WS_BILLING_SQL} WHERE w.id = ?`).bind(id).first<WorkspaceBillingRow & BillingColumnsRow>();
@@ -449,6 +451,7 @@ function adminWorkspaceDto(r: WorkspaceBillingRow & BillingColumnsRow, t = now()
     subscriptionId: r.billing_subscription_id,
     updatedAt: r.billing_updated_at,
     createdAt: r.created_at,
+    allowedProviders: parseAllowedProviders(r.allowed_providers),
   };
 }
 
@@ -498,8 +501,16 @@ billingAdminRoutes.patch("/admin/workspaces/:id/billing", manageUsers, async (c)
   }
   if (body.trialEndsAt !== undefined) sets.push("trial_ends_at = ?") && binds.push(body.trialEndsAt);
   if (body.currentPeriodEnd !== undefined) sets.push("current_period_end = ?") && binds.push(body.currentPeriodEnd);
-  if (!sets.length) return c.json({ error: "Nothing to change (exempt, planId, status, trialEndsAt or currentPeriodEnd)" }, 400);
-  await db.prepare(`UPDATE workspaces SET ${sets.join(", ")}, billing_updated_at = ? WHERE id = ?`).bind(...binds, t, row.id).run();
+  let allowed: string | null | undefined;
+  if (body.allowedProviders !== undefined) {
+    const list = allowedProvidersInput(body.allowedProviders, providers.map((p) => p.id));
+    if (list === undefined) return c.json({ error: "allowedProviders must be null or an array of platform ids" }, 400);
+    allowed = list && JSON.stringify(list);
+  }
+  if (!sets.length && allowed === undefined) return c.json({ error: "Nothing to change (exempt, planId, status, trialEndsAt, currentPeriodEnd or allowedProviders)" }, 400);
+  // Platforms are not billing: changing only them leaves billing_updated_at alone.
+  if (sets.length) await db.prepare(`UPDATE workspaces SET ${sets.join(", ")}, billing_updated_at = ? WHERE id = ?`).bind(...binds, t, row.id).run();
+  if (allowed !== undefined) await db.prepare("UPDATE workspaces SET allowed_providers = ? WHERE id = ?").bind(allowed, row.id).run();
   return c.json(adminWorkspaceDto((await workspaceBilling(db, row.id))!));
 });
 

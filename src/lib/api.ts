@@ -360,7 +360,7 @@ export const api = {
   },
   settings: {
     get: () => get<AppSettings>("/settings"),
-    save: (body: { publicUrl?: string; timezone?: string; experimentalIntegrations?: boolean; mediaRetentionDays?: number }) => request<{ ok: true }>("PUT", "/settings", body),
+    save: (body: { publicUrl?: string; timezone?: string; experimentalIntegrations?: boolean; mediaRetentionDays?: number; workspaceProviders?: string[] | null }) => request<{ ok: true }>("PUT", "/settings", body),
   },
   version: () => get<VersionDTO>("/version"),
   admin: {

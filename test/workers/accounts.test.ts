@@ -232,3 +232,36 @@ describe("account avatars", () => {
     expect(storedAvatarName(null, "acc_1")).toBeNull();
   });
 });
+
+describe("platforms a workspace may use", () => {
+  it("new workspaces copy the instance default; connecting and the provider list follow the workspace", async () => {
+    const save = await call(owner, "/api/settings", { method: "PUT", body: { workspaceProviders: ["youtube", "youtube"] } });
+    expect(save.status, save.text).toBe(200);
+    expect((await call(owner, "/api/settings")).json.workspaceProviders).toEqual(["youtube"]);
+    expect((await call(owner, "/api/settings", { method: "PUT", body: { workspaceProviders: ["nope"] } })).status).toBe(400);
+
+    const ws = await call(owner, "/api/workspaces", { body: { name: "Limited" } });
+    expect(ws.status, ws.text).toBe(201);
+    const limited = { ...owner, ws: ws.json.id as string };
+
+    const blocked = await call(limited, "/api/connect/instagram_standalone/url");
+    expect(blocked.status).toBe(403);
+    expect(blocked.json.error).toMatch(/not available in this workspace/);
+    const list = await call(limited, "/api/providers");
+    expect(list.json.find((p: any) => p.id === "instagram_standalone").allowed).toBe(false);
+    expect(list.json.find((p: any) => p.id === "youtube").allowed).toBe(true);
+
+    // The first workspace predates the setting: every platform.
+    expect((await call(owner, "/api/connect/instagram_standalone/url")).status).toBe(200);
+
+    const admin = await call(owner, `/api/admin/workspaces/${limited.ws}/billing`, { method: "PATCH", body: { allowedProviders: null } });
+    expect(admin.status, admin.text).toBe(200);
+    expect(admin.json.allowedProviders).toBeNull();
+    expect((await call(limited, "/api/connect/instagram_standalone/url")).status).toBe(200);
+    const bad = await call(owner, `/api/admin/workspaces/${limited.ws}/billing`, { method: "PATCH", body: { allowedProviders: ["nope"] } });
+    expect(bad.status).toBe(400);
+
+    await call(owner, "/api/settings", { method: "PUT", body: { workspaceProviders: null } });
+    expect((await call(owner, "/api/settings")).json.workspaceProviders).toBeNull();
+  });
+});

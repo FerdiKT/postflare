@@ -1508,6 +1508,8 @@ export interface AdminWorkspaceBillingDTO {
   subscriptionId: string | null;
   updatedAt: number | null;
   createdAt: number;
+  /** Platforms the workspace may connect and post to; null = every platform. */
+  allowedProviders: string[] | null;
 }
 
 /** Body of PATCH /api/admin/workspaces/:id/billing (instance.users.manage). A plan set here is provider "manual". */
@@ -1518,6 +1520,8 @@ export interface AdminWorkspaceBillingInput {
   status?: BillingStatus;
   trialEndsAt?: number | null;
   currentPeriodEnd?: number | null;
+  /** Platforms the workspace may use (provider ids); null = every platform. */
+  allowedProviders?: string[] | null;
 }
 
 /**

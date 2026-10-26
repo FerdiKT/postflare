@@ -10,7 +10,7 @@ import { enforceWorkspace, loadSnapshot, trialStatements } from "../billing/enti
 import { createSession, forbidDemoUser, isInstanceAdmin, sessionUser, workspaceAccess, type AppEnv } from "../lib/auth";
 import { hashPassword } from "../lib/crypto";
 import { ROLE, isSubset, permissionError } from "../lib/permissions";
-import { baseUrl } from "../lib/settings";
+import { baseUrl, defaultProvidersStatement } from "../lib/settings";
 import { getRole, normalizeEmail, normalizeName, passwordError, rolePermissions } from "../lib/users";
 import { newId, now, randomToken, sha256Hex } from "../lib/util";
 
@@ -251,6 +251,7 @@ invitationPublicRoutes.post("/accept", async (c) => {
         .bind(workspaceId, wsName, userId, t, t, inv.id, userId),
       // Hosted mode: the new workspace starts its trial (nothing happens while billing is off).
       ...trialStatements(db, workspaceId, userId, t),
+      defaultProvidersStatement(db, workspaceId),
     );
   }
   statements.push(

@@ -20,6 +20,8 @@ import {
   Trash2,
   Wand2,
 } from "lucide-react";
+import { providerDisplayName } from "@shared/providerNames";
+import { PlatformAccessPicker, platformAccessLabel } from "../../components/accounts/PlatformAccessPicker";
 import { Button, IconButton } from "../../components/ui/Button";
 import { useConfirm } from "../../components/ui/Confirm";
 import { Dialog, Drawer } from "../../components/ui/Dialog";
@@ -950,7 +952,8 @@ const FILTERS: Array<{ value: string; label: string; status: BillingStatus[] }> 
 ];
 
 function WorkspacesCard({ plans }: { plans: AdminPlanDTO[] }) {
-  const { tz } = useApp();
+  const { tz, providerMap } = useApp();
+  const providerName = (id: string) => providerDisplayName(id, providerMap);
   const [filter, setFilter] = useState("all");
   const status = FILTERS.find((f) => f.value === filter)!.status;
   const list = useFetch(`admin-billing-workspaces:${filter}`, () => api.admin.billing.workspaces(status), ["billing", "workspaces"]);
@@ -995,6 +998,7 @@ function WorkspacesCard({ plans }: { plans: AdminPlanDTO[] }) {
                 <th className="px-3 py-2.5 font-medium">Status</th>
                 <th className="px-3 py-2.5 font-medium">Ends / renews</th>
                 <th className="px-3 py-2.5 font-medium">Via</th>
+                <th className="px-3 py-2.5 font-medium">Platforms</th>
                 <th className="w-20 px-5 py-2.5" />
               </tr>
             </thead>
@@ -1029,6 +1033,9 @@ function WorkspacesCard({ plans }: { plans: AdminPlanDTO[] }) {
                     <td className="px-3 py-2.5 text-zinc-600 dark:text-zinc-300">
                       {w.provider ? (w.provider === "manual" ? "Manual" : PROVIDER_NAME[w.provider]) : <span className="text-zinc-400">—</span>}
                       {w.interval && <span className="text-xs text-zinc-400"> · {w.interval === "year" ? "yearly" : "monthly"}</span>}
+                    </td>
+                    <td className="max-w-48 truncate px-3 py-2.5 text-zinc-600 dark:text-zinc-300" title={platformAccessLabel(w.allowedProviders, providerName)}>
+                      {w.allowedProviders === null ? <span className="text-zinc-400">All</span> : platformAccessLabel(w.allowedProviders, providerName)}
                     </td>
                     <td className="px-5 py-2.5 text-right">
                       <Button size="sm" variant="ghost" icon={<CreditCard className="size-3.5" />} onClick={() => setEditing(w)}>
@@ -1075,9 +1082,11 @@ function WorkspaceBillingDialog({
   const [planId, setPlanId] = useState("");
   const [status, setStatus] = useState<BillingStatus>("none");
   const [trialEnd, setTrialEnd] = useState("");
+  const [platforms, setPlatforms] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (!w) return;
+    setPlatforms(w.allowedProviders);
     setExempt(w.exempt);
     setPlanId(w.planId ?? "");
     setStatus(w.status);
@@ -1095,11 +1104,14 @@ function WorkspaceBillingDialog({
     if (planId !== (w.planId ?? "")) body.planId = planId || null;
     if (status !== w.status) body.status = status;
     if (trialEnd !== dateInput(w.trialEndsAt)) body.trialEndsAt = fromDateInput(trialEnd);
+    const sorted = (v: string[] | null) => JSON.stringify(v === null ? null : [...v].sort());
+    if (sorted(platforms) !== sorted(w.allowedProviders)) body.allowedProviders = platforms;
     if (!Object.keys(body).length) return onClose();
     setBusy(true);
     try {
       const res = await api.admin.billing.setWorkspace(w.workspaceId, body);
       onSaved(res);
+      if (body.allowedProviders !== undefined) invalidate("providers");
       toast.success(`${w.workspaceName} updated`);
       onClose();
     } catch (err) {
@@ -1113,7 +1125,7 @@ function WorkspaceBillingDialog({
     <Dialog
       open
       onClose={onClose}
-      title={`Billing of ${w.workspaceName}`}
+      title={`${w.workspaceName}`}
       description={w.demo ? "The demo workspace is never limited." : `Currently: ${BILLING_STATE_META[w.state].label.toLowerCase()}${w.planName ? `, ${w.planName}` : ""}.`}
     >
       <form onSubmit={save}>
@@ -1153,6 +1165,9 @@ function WorkspaceBillingDialog({
           </div>
           <Field label="Trial ends" help="Last day of the trial (UTC). Setting it with a plan starts a trial of that plan.">
             {(id) => <Input id={id} type="date" value={trialEnd} onChange={(e) => setTrialEnd(e.target.value)} className="w-44" />}
+          </Field>
+          <Field label="Platforms" help="What this workspace may connect and post to. Already connected accounts of a removed platform stop publishing.">
+            {() => <PlatformAccessPicker value={platforms} onChange={setPlatforms} disabled={busy} />}
           </Field>
           {providerSub && (
             <Notice tone="amber">

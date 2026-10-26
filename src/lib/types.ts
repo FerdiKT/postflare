@@ -6,7 +6,14 @@ export type * from "@shared/types";
  * GET /api/providers. `enabled`: new accounts can be connected (false for experimental ones while they are off).
  * `dataDeletionUri`: Meta apps only, the data deletion callback URL to paste in the Meta dashboard.
  */
-export type Provider = ProviderInfo & { configured: boolean; redirectUri: string; enabled: boolean; dataDeletionUri?: string };
+export type Provider = ProviderInfo & {
+  configured: boolean;
+  redirectUri: string;
+  enabled: boolean;
+  /** The current workspace may connect it and post to it (an admin can limit a workspace's platforms). */
+  allowed: boolean;
+  dataDeletionUri?: string;
+};
 
 export type AuthStatus = AuthStatusDTO;
 
@@ -25,6 +32,8 @@ export interface AppSettings {
   experimentalIntegrations?: boolean;
   /** Days before unused media is removed by the daily cleanup; 0 = keep forever. */
   mediaRetentionDays?: number;
+  /** Platforms new workspaces may use (provider ids); null = every platform. */
+  workspaceProviders?: string[] | null;
 }
 
 export interface PlatformConfig {

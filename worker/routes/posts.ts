@@ -20,7 +20,7 @@ import {
   type CampaignContext,
   type CampaignLinkRow,
 } from "../lib/campaigns";
-import { baseUrl } from "../lib/settings";
+import { baseUrl, notAllowedMessage, providerAllowed } from "../lib/settings";
 import { appStoreCampaignUrl } from "../../shared/campaigns";
 import { findPost, logPost, logStatement, postDto, startWorkflow, startWorkflows, terminateWorkflow, workflowInstanceId, type PostRow } from "../lib/posts";
 import { errorMessage, newId, now, parseJson } from "../lib/util";
@@ -63,11 +63,12 @@ function mediaRows(media: Media, ids: string[]): MediaRow[] {
 }
 
 /** Validate a draft against its account's provider. Returns errors (empty when valid). No D1 query. */
-function check(refs: Awaited<ReturnType<typeof loadRefs>>, d: Draft, strict: boolean): string[] {
+function check(refs: Awaited<ReturnType<typeof loadRefs>>, d: Draft, strict: boolean, allowed: readonly string[] | null | undefined): string[] {
   const account = refs.accounts.get(d.accountId);
   if (!account) return [`Account ${d.accountId} not found`];
   const provider = getProvider(account.provider);
   if (!provider) return [`Unknown provider ${account.provider}`];
+  if (!providerAllowed(allowed, provider.id)) return [`${account.name}: ${notAllowedMessage(provider.name)}`];
   try {
     // Drafts are not validated against the platform, but their media must belong to this workspace.
     const media = mediaRows(refs.media, d.media);
@@ -80,9 +81,9 @@ function check(refs: Awaited<ReturnType<typeof loadRefs>>, d: Draft, strict: boo
   }
 }
 
-async function checkAll(env: Env, workspaceId: string, drafts: Draft[], strict: boolean): Promise<string[]> {
+async function checkAll(env: Env, workspaceId: string, drafts: Draft[], strict: boolean, allowed: readonly string[] | null | undefined): Promise<string[]> {
   const refs = await loadRefs(env, workspaceId, drafts);
-  return drafts.flatMap((d) => check(refs, d, strict));
+  return drafts.flatMap((d) => check(refs, d, strict, allowed));
 }
 
 function normalize(p: CreatePostsInput["posts"][number]): Draft {
@@ -238,7 +239,7 @@ postRoutes.get("/posts/:id", requirePermission("posts.read"), async (c) => {
 
 postRoutes.post("/posts/validate", requirePermission("posts.write"), async (c) => {
   const body = await c.req.json<CreatePostsInput>();
-  const errors = await checkAll(c.env, wsId(c), (body.posts ?? []).map(normalize), true);
+  const errors = await checkAll(c.env, wsId(c), (body.posts ?? []).map(normalize), true, c.var.workspace?.allowedProviders);
   return c.json({ errors });
 });
 
@@ -266,7 +267,7 @@ postRoutes.post("/posts", requirePermission("posts.write"), async (c) => {
       : { drafts: normalized, links: [] as CampaignLinkRow[], notes: new Map<string, string[]>() };
   let planned = plan(0);
   // Validated after the rewrite: exactly what will be published.
-  const errors = planned.drafts.flatMap((d) => check(refs, d, status !== "draft"));
+  const errors = planned.drafts.flatMap((d) => check(refs, d, status !== "draft", c.var.workspace?.allowedProviders));
   if (errors.length) return c.json({ error: errors.join("\n"), errors }, 400);
   const pb = await attribution(c.env, workspaceId, body);
   if (pb && "error" in pb) return c.json({ error: pb.error }, pb.error.endsWith("not found") ? 404 : 400);
@@ -398,7 +399,7 @@ postRoutes.patch("/posts/:id", requirePermission("posts.write"), async (c) => {
       if (r.changed) draft = { ...draft, content: r.content, thread: r.thread, settings: r.settings };
     }
   }
-  const errors = [draft].flatMap((d) => check(refs, d, sched.status === "scheduled"));
+  const errors = [draft].flatMap((d) => check(refs, d, sched.status === "scheduled", c.var.workspace?.allowedProviders));
   if (errors.length) return c.json({ error: errors.join("\n"), errors }, 400);
   const pb = (await attribution(c.env, ws, body, { id: row.playbook_id ?? null, version: row.playbook_version ?? null, variant: row.variant ?? null })) ?? {
     id: row.playbook_id ?? null,

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router";
-import { ArrowLeft, ArrowRight, FlaskConical, KeyRound, Search, Settings2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, FlaskConical, KeyRound, Lock, Search, Settings2 } from "lucide-react";
 import { api, isPlanLimit } from "../../lib/api";
 import { useApp } from "../../lib/app";
 import { cn } from "../../lib/format";
@@ -45,7 +45,7 @@ export function ConnectDialog({ open, onClose, initialProvider }: { open: boolea
     if (initialProvider) {
       const p = providerMap.get(initialProvider);
       // Platforms that offer "use a different account" wait on the Continue screen so the choice can be made.
-      if (p && p.enabled && p.auth === "oauth2" && p.configured && !p.switchAccount) void startOAuth(p);
+      if (p && p.enabled && p.allowed !== false && p.auth === "oauth2" && p.configured && !p.switchAccount) void startOAuth(p);
     }
   }, [open, initialProvider]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -70,7 +70,7 @@ export function ConnectDialog({ open, onClose, initialProvider }: { open: boolea
   const groups = useMemo(() => {
     const needle = q.trim().toLowerCase();
     // Experimental platforms stay hidden until an instance admin enables them.
-    const list = providers.filter((p) => p.enabled && (!needle || p.name.toLowerCase().includes(needle) || p.id.includes(needle)));
+    const list = providers.filter((p) => p.enabled && p.allowed !== false && (!needle || p.name.toLowerCase().includes(needle) || p.id.includes(needle)));
     return CATEGORY_ORDER.map((c) => ({ category: c, items: list.filter((p) => p.category === c) })).filter((g) => g.items.length);
   }, [providers, q]);
 
@@ -83,7 +83,9 @@ export function ConnectDialog({ open, onClose, initialProvider }: { open: boolea
       description={selected ? undefined : "Choose a platform. You can connect as many accounts as you like."}
     >
       {selected ? (
-        !selected.enabled ? (
+        selected.allowed === false ? (
+          <NotAllowed provider={selected} onClose={onClose} />
+        ) : !selected.enabled ? (
           <ExperimentalDisabled provider={selected} onClose={onClose} />
         ) : !selected.configured ? (
           <NeedsSetup provider={selected} onClose={onClose} />
@@ -186,6 +188,23 @@ function BackTitle({ provider, onBack }: { provider: Provider; onBack?: () => vo
       Connect {provider.name}
       <ProviderStatusBadge provider={provider} />
     </span>
+  );
+}
+
+function NotAllowed({ provider, onClose }: { provider: Provider; onClose: () => void }) {
+  return (
+    <div className="p-6">
+      <div className="flex gap-4 rounded-xl bg-zinc-50 p-4 ring-1 ring-zinc-200 dark:bg-zinc-800/40 dark:ring-zinc-800">
+        <Lock className="mt-0.5 size-5 shrink-0 text-zinc-400" />
+        <div className="text-sm">
+          <p className="font-medium text-zinc-900 dark:text-zinc-100">{provider.name} is not available in this workspace</p>
+          <p className="mt-1 text-zinc-500">Ask the instance admin to enable it for this workspace.</p>
+        </div>
+      </div>
+      <div className="mt-5 flex justify-end">
+        <Button onClick={onClose}>Close</Button>
+      </div>
+    </div>
   );
 }
 

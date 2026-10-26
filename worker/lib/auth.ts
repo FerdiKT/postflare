@@ -3,6 +3,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { InstancePermission, RoleRef, WorkspacePermission } from "../../shared/types";
 import { BILLING_COLUMNS, entitlements, snapshotFromRow, upgradeUrl, type BillingColumnsRow, type BillingSnapshot } from "../billing/entitlements";
 import { demoEnabled } from "./demo";
+import { parseAllowedProviders } from "./settings";
 import { DEMO_WORKSPACE_PERMISSIONS, ROLE, WORKSPACE_PERMISSIONS, parsePermissions, permissionError } from "./permissions";
 import { newId, now, randomToken, sha256Hex } from "./util";
 
@@ -34,6 +35,8 @@ export interface CurrentWorkspace {
   demo: boolean;
   /** Subscription state read with the workspace (worker/billing/entitlements.ts): limits need no extra query to know billing is off. */
   billing: BillingSnapshot;
+  /** Platforms the workspace may connect and post to; null = every platform. */
+  allowedProviders: string[] | null;
 }
 
 export type AppEnv = {
@@ -209,10 +212,11 @@ interface WorkspaceRow extends BillingColumnsRow {
   is_demo: number;
   /** users.is_demo of the user asking. */
   user_demo: number | null;
+  allowed_providers: string | null;
 }
 
 /** Columns every workspace-access query selects besides the role (`?` = the user id), with the billing state. */
-const WS_COLUMNS = `w.id, w.name, w.is_demo, (SELECT is_demo FROM users WHERE id = ?) AS user_demo, ${BILLING_COLUMNS}`;
+const WS_COLUMNS = `w.id, w.name, w.is_demo, w.allowed_providers, (SELECT is_demo FROM users WHERE id = ?) AS user_demo, ${BILLING_COLUMNS}`;
 
 export function toWorkspace(row: WorkspaceRow, admin: boolean): CurrentWorkspace | null {
   if (row.user_demo) {
@@ -228,6 +232,7 @@ export function toWorkspace(row: WorkspaceRow, admin: boolean): CurrentWorkspace
       viaAdmin: false,
       demo: true,
       billing: snapshotFromRow(row),
+      allowedProviders: parseAllowedProviders(row.allowed_providers),
     };
   }
   if (!row.role_id && !admin) return null;
@@ -240,6 +245,7 @@ export function toWorkspace(row: WorkspaceRow, admin: boolean): CurrentWorkspace
     viaAdmin: !row.role_id,
     demo: !!row.is_demo,
     billing: snapshotFromRow(row),
+    allowedProviders: parseAllowedProviders(row.allowed_providers),
   };
 }
 
@@ -277,7 +283,7 @@ export async function firstWorkspace(db: D1Database, userId: string, instancePer
   if (!admin) return null;
   const any = await db
     .prepare(
-      `SELECT w.id, w.name, w.is_demo, 0 AS user_demo, NULL AS role_id, NULL AS role_name, NULL AS permissions, ${BILLING_COLUMNS}
+      `SELECT w.id, w.name, w.is_demo, w.allowed_providers, 0 AS user_demo, NULL AS role_id, NULL AS role_name, NULL AS permissions, ${BILLING_COLUMNS}
        FROM workspaces w ORDER BY w.is_demo, w.created_at LIMIT 1`,
     )
     .first<WorkspaceRow>();

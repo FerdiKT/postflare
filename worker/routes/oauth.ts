@@ -64,7 +64,7 @@ oauthRoutes.on(["GET", "POST"], ["/:provider/callback", "/:provider/callback/"],
   const ws = await workspaceAccess(c.env.DB, session.user.id, session.instancePermissions, state.workspace_id);
   if (!ws?.permissions.includes("accounts.manage")) return back({ error: "You can no longer connect accounts in this workspace" });
   if (ws.demo) return back({ error: "Connecting accounts is disabled in the demo workspace" });
-  const blocked = await connectBlocked(c.env.DB, provider);
+  const blocked = await connectBlocked(c.env.DB, provider, ws.allowedProviders);
   if (blocked) return back({ error: blocked });
 
   try {

@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useLocation } from "react-router";
 import { AlertTriangle, ArrowUpCircle, Bot, CheckCircle2, ExternalLink, FlaskConical, Globe, HardDrive, Info, Lock, Mail, RefreshCw, Scale, Send, ShieldCheck, Trash2, UserPlus } from "lucide-react";
+import { PlatformAccessPicker } from "../components/accounts/PlatformAccessPicker";
 import { StorageUsage } from "../components/media/StorageUsage";
 import { Button } from "../components/ui/Button";
 import { Field, Input, Select, Switch, Textarea } from "../components/ui/Form";
@@ -32,6 +33,7 @@ export function InstanceSettingsPage() {
       <div className="space-y-6">
         <GeneralSection />
         <IntegrationsSection />
+        <WorkspacePlatformsSection />
         <EmailSection />
         <SignupSection />
         <TurnstileSection />
@@ -311,6 +313,53 @@ function IntegrationsSection() {
                 may conflict with the platform&rsquo;s terms of service, which could put the connected account at risk. Use at your own risk.
               </span>
             </p>
+          </div>
+        )}
+      </Section>
+    </div>
+  );
+}
+
+/** "Platforms for new workspaces": copied into each workspace created from now on (Admin → Billing → Workspaces changes one). */
+function WorkspacePlatformsSection() {
+  const { settings } = useApp();
+  const toast = useToast();
+  const saved = settings?.workspaceProviders ?? null;
+  const [value, setValue] = useState<string[] | null>(saved);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => setValue(saved), [JSON.stringify(saved)]); // eslint-disable-line react-hooks/exhaustive-deps
+  const dirty = JSON.stringify(value === null ? null : [...value].sort()) !== JSON.stringify(saved === null ? null : [...saved].sort());
+
+  async function save() {
+    setBusy(true);
+    try {
+      await api.settings.save({ workspaceProviders: value });
+      toast.success("Platforms for new workspaces saved");
+      invalidate("settings");
+    } catch (err) {
+      toast.error(err);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div id="workspace-platforms" className="scroll-mt-6">
+      <Section
+        icon={<Globe />}
+        title="Platforms for new workspaces"
+        description="What workspaces created from now on (sign-ups, approved access requests, new workspaces) may connect and post to. Existing workspaces keep theirs: change one in Admin → Billing → Workspaces."
+      >
+        {!settings ? (
+          <Skeleton className="h-9 w-full max-w-xl" />
+        ) : (
+          <div className="max-w-xl space-y-4">
+            <PlatformAccessPicker value={value} onChange={setValue} disabled={busy} />
+            <div className="flex justify-end">
+              <Button variant="primary" loading={busy} disabled={!dirty} onClick={save}>
+                Save
+              </Button>
+            </div>
           </div>
         )}
       </Section>
