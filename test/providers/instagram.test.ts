@@ -226,7 +226,7 @@ describe("instagram metrics", () => {
     expect(m.requests[0].form!.access_token).toBe("PT");
     const batch = JSON.parse(m.requests[0].form!.batch);
     expect(batch.map((b: any) => b.relative_url)).toEqual([
-      "M1/insights?metric=views,reach,saved,shares,total_interactions,likes,comments",
+      "M1/insights?metric=views,reach,saved,shares,total_interactions,likes,comments,profile_visits,follows",
       "S1/insights?metric=views,reach,replies,shares,total_interactions",
       "S2/insights?metric=views,reach,replies,shares,total_interactions",
     ]);

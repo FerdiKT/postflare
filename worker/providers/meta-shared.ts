@@ -244,6 +244,8 @@ export function instagramValidate(post: PublishPost): string[] {
 export interface IgState {
   host: string;
   kind: "single" | "carousel" | "stories";
+  /** A single video, published as a reel (its insights include watch time). */
+  reel?: boolean;
   containers: string[];
   caption?: string;
   collaborators?: string[];
@@ -304,6 +306,7 @@ export async function instagramCreate(ctx: ProviderContext, host: string, acc: I
   const state: IgState = {
     host,
     kind: story ? "stories" : carousel ? "carousel" : "single",
+    ...(!story && !carousel && post.media[0]?.kind === "video" ? { reel: true } : {}),
     containers,
     caption: carousel ? post.content : undefined,
     collaborators: carousel && collaborators.length ? collaborators : undefined,
@@ -387,10 +390,10 @@ export async function instagramCheck(ctx: ProviderContext, acc: IgAccount, raw: 
   if (status === "IN_PROGRESS") return pending(state);
   if (status === "PUBLISHED") {
     ctx.log("warn", "Instagram reports the post as already published; not publishing again");
-    return { status: "published", externalId: creationId, url: profile, data: { creationId } };
+    return { status: "published", externalId: creationId, url: profile, data: { creationId, ...(state.reel ? { reel: true } : {}) } };
   }
   const { id } = await publish(creationId);
-  return { status: "published", externalId: id, url: await igPermalink(ctx, host, acc, id, profile), data: { creationId } };
+  return { status: "published", externalId: id, url: await igPermalink(ctx, host, acc, id, profile), data: { creationId, ...(state.reel ? { reel: true } : {}) } };
 }
 
 /** Comment on the root post (Instagram comments are text-only). */
@@ -497,10 +500,17 @@ export async function metricsGet(ctx: ProviderContext, url: string, opts: GraphO
 // feed posts / reels and stories use separate lists. `impressions` / `plays` are gone since v22: `views` replaces them.
 const IG_FEED_METRICS = "views,reach,saved,shares,total_interactions,likes,comments";
 const IG_STORY_METRICS = "views,reach,replies,shares,total_interactions";
+/**
+ * Asked on top of the feed list: reels (publish data `reel`) have watch time, photo and carousel posts the profile
+ * visits and follows they brought. A media that rejects them (#100: older reels without the flag, other types) is read
+ * again with the plain feed list.
+ */
+const IG_REEL_EXTRA = "ig_reels_avg_watch_time,ig_reels_video_view_total_time";
+const IG_POST_EXTRA = "profile_visits,follows";
 const IG_KEYS: Record<string, MetricKey> = { views: "views", reach: "reach", saved: "saves", shares: "shares", likes: "likes", comments: "comments", replies: "replies" };
 
 export const instagramMetricKeys = {
-  post: ["views", "reach", "likes", "comments", "shares", "saves", "replies"] as MetricKey[],
+  post: ["views", "reach", "likes", "comments", "shares", "saves", "replies", "watchTimeMinutes", "avgViewDurationSeconds"] as MetricKey[],
   account: ["followers", "following", "posts"] as MetricKey[],
 };
 
@@ -510,6 +520,10 @@ function igMetrics(data: unknown): MetricValues {
   for (const [name, key] of Object.entries(IG_KEYS)) if (name in v) out[key] = v[name];
   // total_interactions overlaps likes/comments/shares/saves: kept apart so engagements are not double counted.
   if ("total_interactions" in v) out.extra = { total_interactions: v.total_interactions };
+  // Reels watch time comes in milliseconds.
+  if ("ig_reels_avg_watch_time" in v) out.avgViewDurationSeconds = Math.round(v.ig_reels_avg_watch_time / 100) / 10;
+  if ("ig_reels_video_view_total_time" in v) out.watchTimeMinutes = Math.round(v.ig_reels_video_view_total_time / 6000) / 10;
+  for (const k of ["profile_visits", "follows"]) if (k in v) (out.extra ??= {})[k] = v[k];
   return out;
 }
 
@@ -542,18 +556,37 @@ export async function instagramPostMetrics(
     const story = frames.length > 0;
     return { item, story, ids: story ? frames : [item.externalId] };
   });
-  const path = (id: string, story: boolean) => `${id}/insights?metric=${story ? IG_STORY_METRICS : IG_FEED_METRICS}`;
+  const extraFor = (t: (typeof targets)[number]) => (t.story ? "" : t.item.data?.reel ? IG_REEL_EXTRA : IG_POST_EXTRA);
+  const path = (id: string, story: boolean, extra = "") => `${id}/insights?metric=${story ? IG_STORY_METRICS : IG_FEED_METRICS}${extra ? `,${extra}` : ""}`;
   const replies: Array<Array<GraphReply | undefined>> = [];
   if (p.batch) {
-    const flat = await graphBatch(ctx, p.token, targets.flatMap((t) => t.ids.map((id) => path(id, t.story))));
+    const flat = await graphBatch(ctx, p.token, targets.flatMap((t) => t.ids.map((id) => path(id, t.story, extraFor(t)))));
     let i = 0;
     for (const t of targets) replies.push(t.ids.map(() => flat[i++]));
   } else {
     for (const t of targets) {
       if (fetchesLeft(ctx) < t.ids.length) break;
       const list: GraphReply[] = [];
-      for (const id of t.ids) list.push(await graphReply(ctx, `${p.host}/${path(id, t.story)}`, { token: p.token }));
+      for (const id of t.ids) list.push(await graphReply(ctx, `${p.host}/${path(id, t.story, extraFor(t))}`, { token: p.token }));
       replies.push(list);
+    }
+  }
+  // Posts that rejected the extra metrics (#100, unsupported metric for this media type): once more without them.
+  const unsupported = (r: GraphReply | undefined) =>
+    !!r && !r.ok && r.body?.error?.code === 100 && r.body?.error?.error_subcode !== 33 && /metric/i.test(String(r.body?.error?.message ?? ""));
+  const retry = targets.map((t, i) => (!t.story && extraFor(t) && replies[i]?.length === 1 && unsupported(replies[i][0]) ? i : -1)).filter((i) => i >= 0);
+  if (retry.length) {
+    if (p.batch) {
+      const again = await graphBatch(ctx, p.token, retry.map((i) => path(targets[i].ids[0], false)));
+      retry.forEach((i, j) => (replies[i] = [again[j]]));
+    } else {
+      for (const i of retry) {
+        if (fetchesLeft(ctx) < 1) {
+          replies[i] = [undefined];
+          continue;
+        }
+        replies[i] = [await graphReply(ctx, `${p.host}/${path(targets[i].ids[0], false)}`, { token: p.token })];
+      }
     }
   }
 

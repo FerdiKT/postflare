@@ -117,9 +117,25 @@ describe("instagram (instagram login) metrics", () => {
     expect(m.requests).toHaveLength(2);
     const u = new URL(m.requests[0].url);
     expect(u.pathname).toMatch(/\/M1\/insights$/);
-    expect(u.searchParams.get("metric")).toBe("views,reach,saved,shares,total_interactions,likes,comments");
+    expect(u.searchParams.get("metric")).toBe("views,reach,saved,shares,total_interactions,likes,comments,profile_visits,follows");
     expect(u.searchParams.get("access_token")).toBe("LONG");
     expect(res.M1).toEqual({ views: 10, reach: 8, saves: 1, likes: 2, comments: 0, shares: 0, extra: { total_interactions: 3 } });
+  });
+
+  it("reads watch time of reels and the profile visits and follows of posts; retries without them when a media rejects them", async () => {
+    const m = mf([
+      [/\/R1\/insights/, insights({ views: 1000, reach: 700, likes: 50, comments: 4, saved: 3, shares: 2, total_interactions: 59, ig_reels_avg_watch_time: 6420, ig_reels_video_view_total_time: 6_420_000 })],
+      [/\/P1\/insights/, insights({ views: 300, reach: 200, likes: 20, comments: 1, saved: 0, shares: 0, total_interactions: 21, profile_visits: 9, follows: 2 })],
+      [/\/OLD\/insights\?.*follows/, json({ error: { message: "(#100) The Media Insights API does not support the follows metric for this media product type.", code: 100 } }, 400)],
+      [/\/OLD\/insights/, insights({ views: 40 })],
+    ]);
+    const res = await instagramStandalone.postMetrics!(testContext(m.fetch, APP), pro(), [item("R1", { creationId: "C", reel: true }), item("P1"), item("OLD")]);
+    expect(new URL(m.requests[0].url).searchParams.get("metric")).toBe("views,reach,saved,shares,total_interactions,likes,comments,ig_reels_avg_watch_time,ig_reels_video_view_total_time");
+    expect(res.R1).toEqual({ views: 1000, reach: 700, likes: 50, comments: 4, saves: 3, shares: 2, avgViewDurationSeconds: 6.4, watchTimeMinutes: 107, extra: { total_interactions: 59 } });
+    expect(res.P1).toMatchObject({ views: 300, extra: { total_interactions: 21, profile_visits: 9, follows: 2 } });
+    expect(res.OLD).toEqual({ views: 40 });
+    expect(m.requests).toHaveLength(4);
+    expect(new URL(m.requests[3].url).searchParams.get("metric")).toBe("views,reach,saved,shares,total_interactions,likes,comments");
   });
 
   it("stops at the fetch budget and leaves the rest out", async () => {

@@ -206,6 +206,8 @@ describe("summary math and scoping", () => {
       likes: 80,
       comments: 10,
       shares: 0,
+      saves: 0,
+      watchTimeMinutes: 0,
       engagementRate: 100 / 3000, // exposure: views of p1, impressions of p2
       followers: 210, // 150 + 60
       followersChange: 70, // (150 - 100) + (60 - 40)
@@ -224,7 +226,7 @@ describe("summary math and scoping", () => {
     const s = (await call(owner, `/api/analytics/summary?from=${from}&to=${to}&tz=UTC`)).json;
     expect(s.daily.length).toBe(11);
     expect(s.daily.reduce((n: number, d: any) => n + d.posts, 0)).toBe(3);
-    expect(s.daily.find((d: any) => d.day === utcDay(from + DAY))).toEqual({ day: utcDay(from + DAY), posts: 1, views: 1000, engagements: 60 });
+    expect(s.daily.find((d: any) => d.day === utcDay(from + DAY))).toEqual({ day: utcDay(from + DAY), posts: 1, views: 1000, engagements: 60, likes: 50, comments: 10, shares: 0 });
     expect(s.daily.find((d: any) => d.day === utcDay(from + 2 * DAY))).toMatchObject({ posts: 1, views: 2000, engagements: 40 });
     const yt = s.byProvider.find((p: any) => p.provider === "youtube");
     expect(yt).toMatchObject({ key: "youtube", name: "YouTube", posts: 1, views: 1000, followers: 150, followersChange: 50 });

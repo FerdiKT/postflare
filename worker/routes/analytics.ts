@@ -148,6 +148,8 @@ interface PostAgg extends CampaignResultCols {
   likes: number;
   comments: number;
   shares: number;
+  saves: number;
+  watchTimeMinutes: number;
   eng: number;
   exp: number | null;
 }
@@ -163,6 +165,8 @@ class Acc {
   likes = 0;
   comments = 0;
   shares = 0;
+  saves = 0;
+  watchTimeMinutes = 0;
   rateEng = 0;
   rateExp = 0;
   followers: number | null = null;
@@ -191,6 +195,8 @@ class Acc {
     this.likes += r.likes;
     this.comments += r.comments;
     this.shares += r.shares;
+    this.saves += r.saves;
+    this.watchTimeMinutes += r.watchTimeMinutes;
     if (r.exp) {
       this.rateEng += r.eng;
       this.rateExp += r.exp;
@@ -214,6 +220,8 @@ class Acc {
       likes: this.likes,
       comments: this.comments,
       shares: this.shares,
+      saves: this.saves,
+      watchTimeMinutes: Math.round(this.watchTimeMinutes),
       engagementRate: this.rateExp > 0 ? this.rateEng / this.rateExp : null,
       followers: this.followers,
       followersChange: this.followersChange,
@@ -241,7 +249,7 @@ analyticsRoutes.get("/analytics/summary", requirePermission("posts.read"), async
 
   const { results: rows } = await c.env.DB.prepare(
     `SELECT p.published_at AS t, p.account_id, a.provider, p.metrics IS NOT NULL AS m, ${num("views")}, ${num("impressions")}, ${num("reach")},
-       ${num("likes")}, ${num("comments")}, ${num("shares")}, ${engagementSql()} AS eng, ${exposureSql()} AS exp, ${CAMPAIGN_RESULT_COLUMNS()}
+       ${num("likes")}, ${num("comments")}, ${num("shares")}, ${num("saves")}, ${num("watchTimeMinutes")}, ${engagementSql()} AS eng, ${exposureSql()} AS exp, ${CAMPAIGN_RESULT_COLUMNS()}
      FROM posts p JOIN accounts a ON a.id = p.account_id
      WHERE p.workspace_id = ? AND p.status = 'published' AND p.published_at >= ? AND p.published_at < ?${f.sql}`,
   )
@@ -264,7 +272,7 @@ analyticsRoutes.get("/analytics/summary", requirePermission("posts.read"), async
     .all<{ account_id: string; day: string; followers: number }>();
 
   const days = localDays(from, to, tz);
-  const daily: AnalyticsDay[] = days.map((d) => ({ day: d.day, posts: 0, views: 0, engagements: 0 }));
+  const daily: AnalyticsDay[] = days.map((d) => ({ day: d.day, posts: 0, views: 0, engagements: 0, likes: 0, comments: 0, shares: 0 }));
   const current = new Acc();
   const previous = new Acc();
   const byProvider = new Map<string, Acc>();
@@ -289,6 +297,9 @@ analyticsRoutes.get("/analytics/summary", requirePermission("posts.read"), async
     if (row.m) {
       d.views += row.exp ?? 0;
       d.engagements += row.eng;
+      d.likes! += row.likes;
+      d.comments! += row.comments;
+      d.shares! += row.shares;
     }
   }
 

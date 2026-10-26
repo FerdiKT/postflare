@@ -764,6 +764,9 @@ export interface AnalyticsTotals {
   likes: number;
   comments: number;
   shares: number;
+  saves: number;
+  /** Minutes watched (YouTube, Instagram reels), summed over the posts. */
+  watchTimeMinutes: number;
   /** engagements / exposure (views, else impressions, else reach) over posts reporting an exposure; null if none. */
   engagementRate: number | null;
   /** Sum of the latest follower counts of the accounts (at the end of the range). */
@@ -802,6 +805,9 @@ export interface AnalyticsDay {
   /** Exposure of those posts: views, else impressions, else reach (per post). */
   views: number;
   engagements: number;
+  likes?: number;
+  comments?: number;
+  shares?: number;
 }
 
 export interface FollowerSeries {
