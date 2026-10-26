@@ -64,6 +64,30 @@ enum Fmt {
         return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
     }
 
+    /// Watch time: "45m", "12h 5m", "1,204h" (localized unit abbreviations).
+    static func minutes(_ minutes: Double) -> String {
+        let m = max(0, minutes.rounded())
+        if m >= 6000 {
+            return Duration.seconds(m * 60).formatted(.units(allowed: [.hours], width: .narrow))
+        }
+        return Duration.seconds(m * 60).formatted(.units(allowed: [.hours, .minutes], width: .narrow))
+    }
+
+    /// Money: "$1,234.50", "€12".
+    static func money(_ value: Double, currency: String?) -> String {
+        guard let currency, !currency.isEmpty else { return value.formatted(.number.precision(.fractionLength(0...2))) }
+        return value.formatted(.currency(code: currency).precision(.fractionLength(abs(value) >= 1000 ? 0 : 2)))
+    }
+
+    /// Time since publishing on a chart axis: "3h", "2d" (hours in).
+    static func elapsed(hours: Double) -> String {
+        let seconds = max(0, hours * 3600)
+        if hours < 48 {
+            return Duration.seconds(seconds).formatted(.units(allowed: [.hours], width: .narrow, fractionalPart: .hide))
+        }
+        return Duration.seconds(seconds).formatted(.units(allowed: [.days], width: .narrow, fractionalPart: .hide))
+    }
+
     static func bytes(_ n: Double) -> String {
         Int64(n).formatted(.byteCount(style: .file))
     }
@@ -97,6 +121,135 @@ func changeColor(_ change: Double?) -> Color {
 func relativeChange(_ current: Double?, _ previous: Double?) -> Double? {
     guard let current, let previous, previous != 0 else { return nil }
     return (current - previous) / abs(previous)
+}
+
+// MARK: - Metrics
+
+/// Labels and formatting of metric keys (`MetricKey` and the `extra` keys platforms send).
+enum MetricInfo {
+    /// Numeric keys in display order for a post's numbers (account-level ones left out).
+    static let postKeys = ["views", "reach", "impressions", "likes", "comments", "shares", "saves", "replies", "reposts", "quotes", "clicks",
+                           "watchTimeMinutes", "avgViewDurationSeconds", "avgViewPercentage"]
+
+    /// Extras that repeat other numbers and are never shown (Instagram total_interactions = likes + comments + shares + saves).
+    static let hiddenExtras: Set<String> = ["total_interactions"]
+
+    /// Known extras in display order.
+    static let extraOrder = ["profile_visits", "follows", "subscribers_gained", "favorites", "upvote_ratio", "crossposts", "outbound_clicks", "pin_clicks",
+                             "notes", "score", "downvotes", "listed", "total_likes", "channel_views", "monthly_views", "fans"]
+
+    static func title(_ key: String) -> String {
+        switch key {
+        case "views": String(localized: "Views")
+        case "reach": String(localized: "Reach")
+        case "impressions": String(localized: "Impressions")
+        case "likes": String(localized: "Likes")
+        case "comments": String(localized: "Comments")
+        case "shares": String(localized: "Shares")
+        case "saves": String(localized: "Saves")
+        case "replies": String(localized: "Replies")
+        case "reposts": String(localized: "Reposts")
+        case "quotes": String(localized: "Quotes")
+        case "clicks": String(localized: "Clicks")
+        case "followers": String(localized: "Followers")
+        case "following": String(localized: "Following")
+        case "posts": String(localized: "Posts")
+        case "watchTimeMinutes": String(localized: "Watch time")
+        case "avgViewDurationSeconds": String(localized: "Avg. view duration")
+        case "avgViewPercentage": String(localized: "Avg. % viewed")
+        case "profile_visits": String(localized: "Profile visits")
+        case "follows": String(localized: "Follows")
+        case "subscribers_gained": String(localized: "Subscribers gained")
+        case "favorites": String(localized: "Favorites")
+        case "upvote_ratio": String(localized: "Upvote ratio")
+        case "crossposts": String(localized: "Crossposts")
+        case "outbound_clicks": String(localized: "Outbound clicks")
+        case "pin_clicks": String(localized: "Pin clicks")
+        case "notes": String(localized: "Notes")
+        case "score": String(localized: "Score")
+        case "downvotes": String(localized: "Downvotes")
+        case "listed": String(localized: "Listed")
+        case "total_likes": String(localized: "Total likes")
+        case "channel_views": String(localized: "Channel views")
+        case "monthly_views": String(localized: "Monthly views")
+        case "fans": String(localized: "Fans")
+        default:
+            key.replacingOccurrences(of: "_", with: " ").capitalized(with: .current)
+        }
+    }
+
+    static func symbol(_ key: String) -> String {
+        switch key {
+        case "views": "eye"
+        case "reach": "person.3"
+        case "impressions": "rectangle.stack"
+        case "likes", "favorites", "total_likes": "heart"
+        case "comments", "replies": "bubble.left"
+        case "shares", "crossposts": "arrowshape.turn.up.right"
+        case "saves": "bookmark"
+        case "reposts": "arrow.2.squarepath"
+        case "quotes": "quote.bubble"
+        case "clicks", "outbound_clicks", "pin_clicks": "cursorarrow.click"
+        case "followers", "follows", "subscribers_gained", "fans": "person.badge.plus"
+        case "watchTimeMinutes": "clock"
+        case "avgViewDurationSeconds": "timer"
+        case "avgViewPercentage", "upvote_ratio": "percent"
+        case "profile_visits": "person.crop.circle"
+        case "notes": "note.text"
+        case "score": "arrow.up"
+        case "downvotes": "arrow.down"
+        default: "number"
+        }
+    }
+
+    /// The value as shown: compact count, watch time, m:ss, or a percentage.
+    static func format(_ key: String, _ value: Double) -> String {
+        switch key {
+        case "watchTimeMinutes": Fmt.minutes(value)
+        case "avgViewDurationSeconds": Fmt.duration(value)
+        case "avgViewPercentage": Fmt.percent(value / 100)
+        // Reddit sends 0...1; tolerate a percentage.
+        case "upvote_ratio": Fmt.percent(value > 1 ? value / 100 : value)
+        default: Fmt.compact(value)
+        }
+    }
+
+    /// Whether the key can be summed / grows over time (growth chart candidates).
+    static func isCumulative(_ key: String) -> Bool {
+        !["avgViewDurationSeconds", "avgViewPercentage", "upvote_ratio"].contains(key)
+    }
+
+    /// The post's keys with a value, in display order: the normalized keys, then the known extras, then the others.
+    static func keys(of m: MetricValues) -> [String] {
+        let base = postKeys.filter { m[$0] != nil }
+        let extras = m.extra ?? [:]
+        let known = extraOrder.filter { extras[$0] != nil }
+        let others = extras.keys.filter { !extraOrder.contains($0) && !hiddenExtras.contains($0) }.sorted()
+        return base + known + others
+    }
+}
+
+/// YouTube traffic source ids (insightTrafficSourceType) as readable names.
+enum TrafficSourceName {
+    static func title(_ id: String) -> String {
+        switch id {
+        case "YT_SEARCH": String(localized: "YouTube search")
+        case "SHORTS": String(localized: "Shorts feed")
+        case "SUBSCRIBER": String(localized: "Subscriptions")
+        case "RELATED_VIDEO": String(localized: "Suggested videos")
+        case "BROWSE": String(localized: "Browse features")
+        case "EXT_URL": String(localized: "External")
+        case "NOTIFICATION": String(localized: "Notifications")
+        case "PLAYLIST": String(localized: "Playlists")
+        case "YT_CHANNEL": String(localized: "Channel pages")
+        case "YT_OTHER_PAGE": String(localized: "Other YouTube pages")
+        case "END_SCREEN": String(localized: "End screens")
+        case "HASHTAGS": String(localized: "Hashtags")
+        case "SOUND_PAGE": String(localized: "Sound pages")
+        case "NO_LINK_OTHER": String(localized: "Direct or unknown")
+        default: id.replacingOccurrences(of: "_", with: " ").lowercased().capitalized(with: .current)
+        }
+    }
 }
 
 // MARK: - Post status

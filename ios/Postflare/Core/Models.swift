@@ -563,6 +563,49 @@ struct MetricValues: Codable, Hashable, Sendable {
     var reposts: Double?
     var quotes: Double?
     var followers: Double?
+    var following: Double?
+    var posts: Double?
+    /// Minutes watched in total (YouTube, Instagram reels).
+    var watchTimeMinutes: Double?
+    /// Average length of a view in seconds. Not additive.
+    var avgViewDurationSeconds: Double?
+    /// Average share of the video watched per view, 0-100 (YouTube). Not additive.
+    var avgViewPercentage: Double?
+    /// Platform-specific numbers (profile_visits, subscribers_gained, upvote_ratio, ...).
+    var extra: [String: Double]?
+
+    init() {}
+
+    /// Lenient: a key of the wrong type or a non-number in `extra` is skipped instead of failing the response.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        impressions = c.lenient(.impressions)
+        reach = c.lenient(.reach)
+        views = c.lenient(.views)
+        likes = c.lenient(.likes)
+        comments = c.lenient(.comments)
+        shares = c.lenient(.shares)
+        saves = c.lenient(.saves)
+        clicks = c.lenient(.clicks)
+        replies = c.lenient(.replies)
+        reposts = c.lenient(.reposts)
+        quotes = c.lenient(.quotes)
+        followers = c.lenient(.followers)
+        following = c.lenient(.following)
+        posts = c.lenient(.posts)
+        watchTimeMinutes = c.lenient(.watchTimeMinutes)
+        avgViewDurationSeconds = c.lenient(.avgViewDurationSeconds)
+        avgViewPercentage = c.lenient(.avgViewPercentage)
+        if let raw: [String: JSONValue] = c.lenient(.extra) {
+            let numbers = raw.compactMapValues(\.number)
+            extra = numbers.isEmpty ? nil : numbers
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case impressions, reach, views, likes, comments, shares, saves, clicks, replies, reposts, quotes, followers, following, posts
+        case watchTimeMinutes, avgViewDurationSeconds, avgViewPercentage, extra
+    }
 
     /// likes + comments + shares + saves + replies + reposts + quotes + clicks (shared/types.ts `engagements`).
     var engagements: Double {
@@ -571,6 +614,67 @@ struct MetricValues: Codable, Hashable, Sendable {
 
     /// views, else impressions, else reach.
     var exposure: Double? { views ?? impressions ?? reach }
+
+    /// engagements / exposure, nil without an exposure.
+    var engagementRate: Double? { exposure.flatMap { $0 > 0 ? engagements / $0 : nil } }
+
+    /// A numeric key by name (`MetricKey`), else an `extra` value.
+    subscript(key: String) -> Double? {
+        switch key {
+        case "impressions": impressions
+        case "reach": reach
+        case "views": views
+        case "likes": likes
+        case "comments": comments
+        case "shares": shares
+        case "saves": saves
+        case "clicks": clicks
+        case "replies": replies
+        case "reposts": reposts
+        case "quotes": quotes
+        case "followers": followers
+        case "following": following
+        case "posts": posts
+        case "watchTimeMinutes": watchTimeMinutes
+        case "avgViewDurationSeconds": avgViewDurationSeconds
+        case "avgViewPercentage": avgViewPercentage
+        default: extra?[key]
+        }
+    }
+}
+
+extension KeyedDecodingContainer {
+    /// The value, or nil when the key is missing, null or of another type.
+    func lenient<T: Decodable>(_ key: Key) -> T? { (try? decodeIfPresent(T.self, forKey: key)) ?? nil }
+
+    /// A number, 0 when missing or invalid.
+    func number(_ key: Key) -> Double { lenient(key) ?? 0 }
+
+    /// The array's valid elements (invalid ones are skipped); empty when missing.
+    func lossy<T: Decodable>(_ key: Key) -> [T] {
+        guard var list = try? nestedUnkeyedContainer(forKey: key) else { return [] }
+        return list.lossyElements()
+    }
+}
+
+extension UnkeyedDecodingContainer {
+    mutating func lossyElements<T: Decodable>() -> [T] {
+        var out: [T] = []
+        while !isAtEnd {
+            if let v = try? decode(T.self) { out.append(v) }
+            else if (try? decode(JSONValue.self)) == nil { break }
+        }
+        return out
+    }
+}
+
+/// A JSON array whose invalid elements are skipped (list endpoints).
+struct LossyList<T: Decodable>: Decodable {
+    var items: [T]
+    init(from decoder: Decoder) throws {
+        var c = try decoder.unkeyedContainer()
+        items = c.lossyElements()
+    }
 }
 
 struct AccountMetricsStatus: Codable, Hashable, Sendable {
@@ -657,6 +761,8 @@ struct ProviderInfo: Codable, Hashable, Identifiable, Sendable {
     struct Analytics: Codable, Hashable, Sendable {
         var post: Bool
         var account: Bool
+        /// Metric keys the platform reports (post and account); nil from older servers.
+        var metrics: [String]?
     }
 
     var id: String
@@ -709,44 +815,147 @@ struct MultipartPart: Codable, Hashable, Sendable {
 
 // MARK: - Analytics
 
+/// Totals over a range of published posts (missing keys from older servers count as 0).
 struct AnalyticsTotals: Codable, Hashable, Sendable {
-    var posts: Double
-    var postsWithMetrics: Double
-    var views: Double
-    var impressions: Double
-    var reach: Double
-    var engagements: Double
-    var likes: Double
-    var comments: Double
-    var shares: Double
+    var posts: Double = 0
+    var postsWithMetrics: Double = 0
+    var views: Double = 0
+    var impressions: Double = 0
+    var reach: Double = 0
+    var engagements: Double = 0
+    var likes: Double = 0
+    var comments: Double = 0
+    var shares: Double = 0
+    var saves: Double = 0
+    var watchTimeMinutes: Double = 0
     var engagementRate: Double?
     var followers: Double?
     var followersChange: Double?
-    var campaignPosts: Double?
-    var clicks: Double?
-    var downloads: Double?
+    var campaignPosts: Double = 0
+    var clicks: Double = 0
+    var downloads: Double = 0
+    var redownloads: Double = 0
+    var proceeds: Double = 0
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        posts = c.number(.posts)
+        postsWithMetrics = c.number(.postsWithMetrics)
+        views = c.number(.views)
+        impressions = c.number(.impressions)
+        reach = c.number(.reach)
+        engagements = c.number(.engagements)
+        likes = c.number(.likes)
+        comments = c.number(.comments)
+        shares = c.number(.shares)
+        saves = c.number(.saves)
+        watchTimeMinutes = c.number(.watchTimeMinutes)
+        engagementRate = c.lenient(.engagementRate)
+        followers = c.lenient(.followers)
+        followersChange = c.lenient(.followersChange)
+        campaignPosts = c.number(.campaignPosts)
+        clicks = c.number(.clicks)
+        downloads = c.number(.downloads)
+        redownloads = c.number(.redownloads)
+        proceeds = c.number(.proceeds)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case posts, postsWithMetrics, views, impressions, reach, engagements, likes, comments, shares, saves, watchTimeMinutes
+        case engagementRate, followers, followersChange, campaignPosts, clicks, downloads, redownloads, proceeds
+    }
+
+    /// Average exposure per post with metrics, nil without any.
+    var viewsPerPost: Double? { postsWithMetrics > 0 ? views / postsWithMetrics : nil }
 }
 
+/// Totals of one platform (`key` = provider id) or one account (`key` = account id).
+@dynamicMemberLookup
 struct AnalyticsBreakdown: Codable, Hashable, Identifiable, Sendable {
     var key: String
     var provider: String
     var accountId: String?
     var name: String
     var username: String?
-    var posts: Double
-    var views: Double
-    var engagements: Double
-    var engagementRate: Double?
-    var followers: Double?
+    var totals: AnalyticsTotals
 
     var id: String { key }
+
+    subscript<V>(dynamicMember path: KeyPath<AnalyticsTotals, V>) -> V { totals[keyPath: path] }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        key = try c.decode(String.self, forKey: .key)
+        provider = c.lenient(.provider) ?? ""
+        accountId = c.lenient(.accountId)
+        name = c.lenient(.name) ?? key
+        username = c.lenient(.username)
+        totals = try AnalyticsTotals(from: decoder)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        try totals.encode(to: encoder)
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(key, forKey: .key)
+        try c.encode(provider, forKey: .provider)
+        try c.encodeIfPresent(accountId, forKey: .accountId)
+        try c.encode(name, forKey: .name)
+        try c.encodeIfPresent(username, forKey: .username)
+    }
+
+    private enum CodingKeys: String, CodingKey { case key, provider, accountId, name, username }
 }
 
+/// One day (YYYY-MM-DD in the summary's tz); numbers of the posts published that day.
 struct AnalyticsDay: Codable, Hashable, Sendable {
     var day: String
     var posts: Double
     var views: Double
     var engagements: Double
+    /// Newer servers only.
+    var likes: Double?
+    var comments: Double?
+    var shares: Double?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        day = try c.decode(String.self, forKey: .day)
+        posts = c.number(.posts)
+        views = c.number(.views)
+        engagements = c.number(.engagements)
+        likes = c.lenient(.likes)
+        comments = c.lenient(.comments)
+        shares = c.lenient(.shares)
+    }
+
+    private enum CodingKeys: String, CodingKey { case day, posts, views, engagements, likes, comments, shares }
+}
+
+/// Follower counts of one account, one point per collected (UTC) day.
+struct FollowerSeries: Codable, Hashable, Identifiable, Sendable {
+    struct Point: Codable, Hashable, Sendable {
+        var day: String
+        var followers: Double
+    }
+
+    var accountId: String
+    var provider: String
+    var name: String
+    var points: [Point]
+
+    var id: String { accountId }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        accountId = try c.decode(String.self, forKey: .accountId)
+        provider = c.lenient(.provider) ?? ""
+        name = c.lenient(.name) ?? accountId
+        points = c.lossy(.points)
+    }
+
+    private enum CodingKeys: String, CodingKey { case accountId, provider, name, points }
 }
 
 struct AnalyticsSummary: Codable, Sendable {
@@ -758,7 +967,53 @@ struct AnalyticsSummary: Codable, Sendable {
     var byProvider: [AnalyticsBreakdown]
     var byAccount: [AnalyticsBreakdown]
     var daily: [AnalyticsDay]
+    var followers: [FollowerSeries]
+    /// Currency of `proceeds`.
     var currency: String?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        from = c.number(.from)
+        to = c.number(.to)
+        tz = c.lenient(.tz) ?? TimeZone.current.identifier
+        totals = c.lenient(.totals) ?? AnalyticsTotals()
+        previous = c.lenient(.previous) ?? AnalyticsTotals()
+        byProvider = c.lossy(.byProvider)
+        byAccount = c.lossy(.byAccount)
+        daily = c.lossy(.daily)
+        followers = c.lossy(.followers)
+        currency = c.lenient(.currency)
+    }
+
+    private enum CodingKeys: String, CodingKey { case from, to, tz, totals, previous, byProvider, byAccount, daily, followers, currency }
+}
+
+/// Results of a tracked App Store link: Postflare clicks and Apple's numbers for its campaign token.
+struct CampaignResults: Codable, Hashable, Sendable {
+    var clicks: Double = 0
+    /// First-time downloads; nil until Revflare reported the token.
+    var downloads: Double?
+    var redownloads: Double?
+    var purchases: Double?
+    var proceeds: Double?
+    var sales: Double?
+    var currency: String?
+    /// Latest report day (YYYY-MM-DD).
+    var asOf: String?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        clicks = c.number(.clicks)
+        downloads = c.lenient(.downloads)
+        redownloads = c.lenient(.redownloads)
+        purchases = c.lenient(.purchases)
+        proceeds = c.lenient(.proceeds)
+        sales = c.lenient(.sales)
+        currency = c.lenient(.currency)
+        asOf = c.lenient(.asOf)
+    }
+
+    private enum CodingKeys: String, CodingKey { case clicks, downloads, redownloads, purchases, proceeds, sales, currency, asOf }
 }
 
 struct AnalyticsPost: Codable, Hashable, Identifiable, Sendable {
@@ -770,17 +1025,97 @@ struct AnalyticsPost: Codable, Hashable, Identifiable, Sendable {
     var accountUsername: String?
     var excerpt: String
     var media: [String]
+    var externalId: String?
     var externalUrl: String?
     var publishedAt: Double
     var metrics: MetricValues?
+    var metricsAt: Double?
+    /// Next scheduled collection, nil when collection stopped.
+    var metricsNextAt: Double?
     var engagements: Double
     var engagementRate: Double?
+    var campaign: CampaignResults?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        groupId = c.lenient(.groupId) ?? id
+        accountId = c.lenient(.accountId) ?? ""
+        provider = c.lenient(.provider) ?? ""
+        accountName = c.lenient(.accountName) ?? ""
+        accountUsername = c.lenient(.accountUsername)
+        excerpt = c.lenient(.excerpt) ?? ""
+        media = c.lossy(.media)
+        externalId = c.lenient(.externalId)
+        externalUrl = c.lenient(.externalUrl)
+        publishedAt = c.number(.publishedAt)
+        metrics = c.lenient(.metrics)
+        metricsAt = c.lenient(.metricsAt)
+        metricsNextAt = c.lenient(.metricsNextAt)
+        engagements = c.lenient(.engagements) ?? metrics?.engagements ?? 0
+        engagementRate = c.lenient(.engagementRate)
+        campaign = c.lenient(.campaign)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, groupId, accountId, provider, accountName, accountUsername, excerpt, media, externalId, externalUrl, publishedAt
+        case metrics, metricsAt, metricsNextAt, engagements, engagementRate, campaign
+    }
+}
+
+/// Structured analytics of a post (YouTube): audience retention and traffic sources.
+struct MetricDetails: Codable, Hashable, Sendable {
+    struct RetentionPoint: Hashable, Sendable {
+        /// Share of the video elapsed, 0...1.
+        var progress: Double
+        /// Share of the views still watching (can exceed 1 when parts are rewatched).
+        var ratio: Double
+    }
+
+    struct TrafficSource: Codable, Hashable, Sendable {
+        var source: String
+        var views: Double
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            source = c.lenient(.source) ?? "UNKNOWN"
+            views = c.number(.views)
+        }
+
+        private enum CodingKeys: String, CodingKey { case source, views }
+    }
+
+    /// `[[progress, ratio], ...]` on the wire.
+    var retention: [[Double]]?
+    var trafficSources: [TrafficSource]?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let points: [[Double]] = c.lossy(.retention)
+        retention = points.isEmpty ? nil : points
+        let sources: [TrafficSource] = c.lossy(.trafficSources)
+        trafficSources = sources.isEmpty ? nil : sources
+    }
+
+    private enum CodingKeys: String, CodingKey { case retention, trafficSources }
+
+    var retentionPoints: [RetentionPoint] {
+        (retention ?? []).compactMap { $0.count >= 2 ? RetentionPoint(progress: $0[0], ratio: $0[1]) : nil }.sorted { $0.progress < $1.progress }
+    }
 }
 
 struct PostMetrics: Codable, Sendable {
     struct Snapshot: Codable, Hashable, Sendable {
         var capturedAt: Double
         var metrics: MetricValues
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            capturedAt = try c.decode(Double.self, forKey: .capturedAt)
+            metrics = c.lenient(.metrics) ?? MetricValues()
+        }
+
+        private enum CodingKeys: String, CodingKey { case capturedAt, metrics }
     }
 
     var postId: String
@@ -789,6 +1124,36 @@ struct PostMetrics: Codable, Sendable {
     var metricsAt: Double?
     var metricsNextAt: Double?
     var snapshots: [Snapshot]
+    var details: MetricDetails?
+    var detailsAt: Double?
+    var campaign: CampaignResults?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        postId = c.lenient(.postId) ?? ""
+        publishedAt = c.lenient(.publishedAt)
+        metrics = c.lenient(.metrics)
+        metricsAt = c.lenient(.metricsAt)
+        metricsNextAt = c.lenient(.metricsNextAt)
+        snapshots = c.lossy(.snapshots)
+        details = c.lenient(.details)
+        detailsAt = c.lenient(.detailsAt)
+        campaign = c.lenient(.campaign)
+    }
+
+    private enum CodingKeys: String, CodingKey { case postId, publishedAt, metrics, metricsAt, metricsNextAt, snapshots, details, detailsAt, campaign }
+}
+
+/// Response of POST /analytics/refresh.
+struct AnalyticsRefresh: Decodable, Sendable {
+    struct AccountState: Decodable, Sendable {
+        var id: String
+        var metricsStatus: AccountMetricsStatus?
+        var postsRefreshed: Int?
+    }
+
+    var post: AnalyticsPost?
+    var account: AccountState?
 }
 
 // MARK: - Billing

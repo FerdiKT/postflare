@@ -1,4 +1,3 @@
-import Charts
 import SwiftUI
 
 /// One post: a preview of how it looks on its platform (switchable between the accounts of its group), its status
@@ -118,15 +117,9 @@ struct PostDetailView: View {
 
             actionsSection(p)
 
-            if p.status == .published { metricsSection() }
+            if p.status == .published { PostPerformanceSections(post: p, providerId: providerId, metrics: $metrics) }
 
-            if let campaign = p.campaign, let tracked = campaign.trackedUrl {
-                Section("Tracked App Store link") {
-                    LabeledContent("Link", value: tracked)
-                    LabeledContent("Clicks", value: Fmt.count(campaign.clicks ?? 0))
-                    if let d = campaign.downloads { LabeledContent("Downloads", value: Fmt.count(d)) }
-                }
-            }
+            campaignSection(p)
 
             settingsSection(p, provider: provider)
 
@@ -201,7 +194,7 @@ struct PostDetailView: View {
                 StatusBadge(status: p.status)
             }
             .accessibilityElement(children: .combine)
-            if let url = p.externalUrl.flatMap(URL.init(string:)) {
+            if p.status != .published, let url = p.externalUrl.flatMap(URL.init(string:)) {
                 Button { openURL(url) } label: {
                     HStack {
                         Label("Open the post", systemImage: "arrow.up.right.square")
@@ -371,47 +364,36 @@ struct PostDetailView: View {
         }
     }
 
+    /// Tracked App Store link: Postflare's clicks and Apple's numbers for its campaign token.
     @ViewBuilder
-    private func metricsSection() -> some View {
-        Section {
-            if let m = metrics?.metrics {
-                let rows: [(LocalizedStringKey, Double?)] = [("Views", m.views ?? m.impressions ?? m.reach), ("Likes", m.likes), ("Comments", m.comments), ("Shares", m.shares ?? m.reposts), ("Saves", m.saves), ("Clicks", m.clicks)]
-                let shown = rows.filter { $0.1 != nil }
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
-                    ForEach(Array(shown.enumerated()), id: \.offset) { _, row in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(Fmt.compact(row.1 ?? 0)).font(.system(.title3, design: .rounded).weight(.bold)).monospacedDigit()
-                            Text(row.0).font(.caption).foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .accessibilityElement(children: .combine)
+    private func campaignSection(_ p: Post) -> some View {
+        let results = metrics?.campaign
+        if p.campaign?.trackedUrl != nil || results != nil {
+            let currency = results?.currency ?? p.campaign?.currency
+            Section {
+                if let tracked = p.campaign?.trackedUrl {
+                    LabeledContent("Link") {
+                        Text(tracked).textSelection(.enabled).lineLimit(1).truncationMode(.middle)
                     }
                 }
-                .padding(.vertical, 4)
-                if let rate = m.exposure.flatMap({ $0 > 0 ? m.engagements / $0 : nil }) {
-                    LabeledContent("Engagement rate", value: Fmt.percent(rate))
+                LabeledContent("Link clicks", value: Fmt.compact(results?.clicks ?? Double(p.campaign?.clicks ?? 0)))
+                if let d = results?.downloads ?? p.campaign?.downloads.map(Double.init) {
+                    LabeledContent("Installs", value: Fmt.compact(d))
                 }
-                if let snaps = metrics?.snapshots, snaps.count > 1 {
-                    Chart(snaps, id: \.capturedAt) { s in
-                        LineMark(x: .value("Time", Fmt.date(ms: s.capturedAt)), y: .value("Views", s.metrics.exposure ?? 0))
-                            .foregroundStyle(Color.brand)
-                            .interpolationMethod(.monotone)
-                        PointMark(x: .value("Time", Fmt.date(ms: s.capturedAt)), y: .value("Views", s.metrics.exposure ?? 0))
-                            .foregroundStyle(Color.brand)
-                    }
-                    .frame(height: 120)
-                    .accessibilityLabel(Text("Views over time"))
+                if let r = results?.redownloads, r > 0 { LabeledContent("Redownloads", value: Fmt.compact(r)) }
+                if let u = results?.purchases, u > 0 { LabeledContent("Purchases", value: Fmt.compact(u)) }
+                if let proceeds = results?.proceeds ?? p.campaign?.proceeds {
+                    LabeledContent("Proceeds", value: Fmt.money(proceeds, currency: currency))
                 }
-                if let at = metrics?.metricsAt {
-                    Text("Collected \(Fmt.relative(ms: at))").font(.caption).foregroundStyle(.secondary)
+            } header: {
+                Text("Tracked App Store link")
+            } footer: {
+                if let day = results?.asOf.flatMap(Fmt.day) {
+                    Text("App Store numbers as of \(day.formatted(date: .abbreviated, time: .omitted)).")
+                } else if results?.downloads == nil {
+                    Text("Installs and proceeds appear once Apple reports them.")
                 }
-            } else if let next = metrics?.metricsNextAt {
-                Text("First numbers \(Fmt.relative(ms: next)).").foregroundStyle(.secondary)
-            } else {
-                Text("No numbers yet.").foregroundStyle(.secondary)
             }
-        } header: {
-            Text("Performance")
         }
     }
 

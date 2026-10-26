@@ -8,10 +8,13 @@ What it does: home (today / this week by status, up next, what needs attention, 
 day and a month calendar, filters by status, account group and account), post detail (a native-looking preview per platform
 — YouTube, TikTok / Reels, Instagram feed and stories, X-style threads, LinkedIn / Facebook, Pinterest, Reddit, blogs —
 switchable between the accounts of the group, collapsible long text, a fullscreen media viewer with zoom and video
-playback, then metrics, settings with their labels, ids and the publishing log; retry, cancel, change schedule, resolve
-a check, duplicate, delete),
+playback, then performance: every metric the post has, growth over the snapshots, YouTube audience retention and
+traffic sources, tracked App Store link results, "Refresh now"; then settings with their labels, ids and the publishing
+log; retry, cancel, change schedule, resolve a check, duplicate, delete),
 composer (accounts by group, per-platform character counters, photos and videos with upload progress, now / later /
-draft, required platform settings), accounts, analytics, notifications, signing a computer in, and two widgets.
+draft, required platform settings), accounts, analytics (7 days to 1 year, filtered by platform or account; KPIs against the previous period, a daily
+chart, followers per account, platforms and accounts, top posts by views / engagements / rate / newest / link results
+with paging), notifications, signing a computer in, and two widgets.
 
 ## Build
 

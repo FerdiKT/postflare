@@ -261,12 +261,44 @@ extension APIClient {
     func deleteMedia(_ id: String) async throws { _ = try await send("DELETE", "/media/\(id)", as: IgnoredResponse.self) }
 
     // Analytics
-    func analyticsSummary(from: Date, to: Date) async throws -> AnalyticsSummary {
-        try await get("/analytics/summary", query: ["from": ms(from), "to": ms(to), "tz": TimeZone.current.identifier])
+    /// Narrows analytics to one platform or one account (`provider` / `accountId` query).
+    struct AnalyticsScope: Hashable, Sendable {
+        var provider: String?
+        var accountId: String?
+        static let all = AnalyticsScope()
     }
 
-    func topPosts(from: Date, to: Date, sort: String = "views", limit: Int = 10) async throws -> [AnalyticsPost] {
-        try await get("/analytics/posts", query: ["from": ms(from), "to": ms(to), "tz": TimeZone.current.identifier, "sort": sort, "limit": String(limit)])
+    /// Sort keys of `GET /analytics/posts`.
+    enum AnalyticsSort: String, CaseIterable, Sendable {
+        case views, engagements, engagementRate, publishedAt, clicks, downloads, proceeds
+    }
+
+    func analyticsSummary(from: Date, to: Date, scope: AnalyticsScope = .all) async throws -> AnalyticsSummary {
+        try await get("/analytics/summary", query: [
+            "from": ms(from), "to": ms(to), "tz": TimeZone.current.identifier,
+            "provider": scope.provider, "accountId": scope.accountId,
+        ])
+    }
+
+    func topPosts(from: Date, to: Date, scope: AnalyticsScope = .all, sort: AnalyticsSort = .views, limit: Int = 10, offset: Int = 0) async throws -> [AnalyticsPost] {
+        let list: LossyList<AnalyticsPost> = try await get("/analytics/posts", query: [
+            "from": ms(from), "to": ms(to), "tz": TimeZone.current.identifier, "sort": sort.rawValue,
+            "limit": String(min(max(limit, 1), 200)), "offset": offset > 0 ? String(offset) : nil,
+            "provider": scope.provider, "accountId": scope.accountId,
+        ])
+        return list.items
+    }
+
+    /// Collects a post's metrics now (published posts only; the server returns the stored values within a minute).
+    func refreshPostMetrics(_ postId: String) async throws -> AnalyticsRefresh {
+        struct Body: Encodable { var postId: String }
+        return try await send("POST", "/analytics/refresh", body: Body(postId: postId))
+    }
+
+    /// Collects an account's metrics (followers) and its posts' now.
+    func refreshAccountMetrics(_ accountId: String) async throws -> AnalyticsRefresh {
+        struct Body: Encodable { var accountId: String }
+        return try await send("POST", "/analytics/refresh", body: Body(accountId: accountId))
     }
 
     // Devices and push
