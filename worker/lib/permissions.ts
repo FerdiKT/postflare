@@ -3,7 +3,8 @@ import type { InstancePermission, PermissionInfo, PermissionKey, WorkspacePermis
 /**
  * The permission catalog: every permission the app checks, with the text shown in the UI and in 403 errors.
  * Roles (table `roles`) are named bundles of these keys. Built-in roles are seeded by migrations/0003
- * (`instance.overview.view` is added to the instance Admin by migrations/0007, `billing.manage` to the Owner by 0013).
+ * (`instance.overview.view` is added to the instance Admin by migrations/0007, `billing.manage` to the Owner by 0013,
+ * `instance.support.manage` to the instance Admin by 0021).
  */
 export const PERMISSIONS: ReadonlyArray<PermissionInfo & { action: string }> = [
   {
@@ -40,6 +41,13 @@ export const PERMISSIONS: ReadonlyArray<PermissionInfo & { action: string }> = [
     label: "View instance overview",
     description: "Admin overview: usage, publishing health and Free plan quotas across every workspace.",
     action: "view the instance overview",
+  },
+  {
+    key: "instance.support.manage",
+    scope: "instance",
+    label: "Answer support chats",
+    description: "Admin → Support: read and answer the support chat (tickets), its settings and push notifications.",
+    action: "answer support chats",
   },
   {
     key: "workspace.manage",

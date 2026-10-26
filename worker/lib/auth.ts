@@ -371,7 +371,8 @@ export function isCrossSiteMutation(c: Ctx): boolean {
 export const sameOriginMutations: MiddlewareHandler<AppEnv> = async (c, next) => {
   // Payment provider webhooks (public, signed, never from a browser) are exempt, and so are iOS app requests with a
   // device token (a cross-site page cannot set an Authorization header without a CORS preflight, which never passes).
-  if (c.req.path.startsWith("/api/billing/webhooks/") || deviceToken(c.req.header("authorization"))) return next();
+  // The support widget runs on other websites too (CORS); it never acts as the signed-in user for another origin.
+  if (c.req.path.startsWith("/api/billing/webhooks/") || c.req.path.startsWith("/api/support/") || deviceToken(c.req.header("authorization"))) return next();
   if (isCrossSiteMutation(c)) return c.json({ error: "Cross-origin request blocked" }, 403);
   return next();
 };

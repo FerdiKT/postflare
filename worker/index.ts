@@ -35,6 +35,7 @@ import { postRoutes } from "./routes/posts";
 import { settingsRoutes } from "./routes/settings";
 import { updateRoutes, versionRoute } from "./routes/updates";
 import { uploadLinkPublic, uploadLinkRoutes } from "./routes/uploadLinks";
+import { supportAdminRoutes, supportPublicRoutes } from "./routes/support";
 import { userRoutes } from "./routes/users";
 import { changePassword, meRoutes, workspaceRoutes } from "./routes/workspaces";
 
@@ -52,6 +53,8 @@ api.route("/access-requests", accessRequestPublicRoutes);
 api.route("/version", versionRoute);
 // Public pricing table and payment provider webhooks (signed by the provider, no session).
 api.route("/billing", billingPublicRoutes);
+// Support chat widget (any website, CORS, a visitor token; docs/support-spec.md). The staff inbox is below requireAuth.
+api.route("/support", supportPublicRoutes);
 // Everything below needs a session, an iOS device token or an API key; handlers scope by c.var.workspace and check
 // permissions.
 api.use("*", requireAuth);
@@ -76,6 +79,7 @@ api.route("/", updateRoutes);
 api.route("/", adminRoutes);
 api.route("/", billingRoutes);
 api.route("/", billingAdminRoutes);
+api.route("/", supportAdminRoutes);
 api.notFound((c) => c.json({ error: "Not found" }, 404));
 
 const app = new Hono<AppEnv>();

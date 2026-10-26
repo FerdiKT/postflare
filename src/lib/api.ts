@@ -1,4 +1,10 @@
 import type {
+  SupportMessageDTO,
+  SupportSettingsDTO,
+  SupportStatus,
+  SupportThreadDTO,
+  SupportTicketDTO,
+  SupportTicketListDTO,
   AccessRequestDTO,
   AccessRequestInput,
   AccessRequestListDTO,
@@ -269,6 +275,20 @@ export const api = {
     count: () => get<{ pending: number }>("/access-requests/count"),
     get: (id: string) => get<AccessRequestDTO>(`/access-requests/${encodeURIComponent(id)}`),
     review: (id: string, input: AccessRequestReviewInput) => request<AccessRequestReviewDTO>("PATCH", `/access-requests/${encodeURIComponent(id)}`, input),
+  },
+  support: {
+    list: (q: { status?: SupportStatus | "all"; q?: string; mine?: boolean; limit?: number; before?: number } = {}) =>
+      get<SupportTicketListDTO>(`/admin/support/conversations${qs({ ...q, mine: q.mine ? "1" : undefined })}`),
+    count: () => get<{ unread: number; open: number }>("/admin/support/count"),
+    get: (id: string) => get<SupportThreadDTO<SupportTicketDTO>>(`/admin/support/conversations/${encodeURIComponent(id)}`),
+    reply: (id: string, body: { body: string; note?: boolean; status?: SupportStatus }) =>
+      request<{ message: SupportMessageDTO; conversation: SupportTicketDTO }>("POST", `/admin/support/conversations/${encodeURIComponent(id)}/messages`, body),
+    update: (id: string, body: { status?: SupportStatus; assigneeId?: string | null; subject?: string }) =>
+      request<{ conversation: SupportTicketDTO }>("PATCH", `/admin/support/conversations/${encodeURIComponent(id)}`, body),
+    remove: (id: string) => request<{ ok: true }>("DELETE", `/admin/support/conversations/${encodeURIComponent(id)}`),
+    staff: () => get<{ items: Array<{ id: string; name: string; email: string }> }>("/admin/support/staff"),
+    settings: () => get<SupportSettingsDTO>("/admin/support/settings"),
+    saveSettings: (body: { enabled?: boolean; teamName?: string; greeting?: string }) => request<SupportSettingsDTO>("PATCH", "/admin/support/settings", body),
   },
   invitations: {
     create: (input: CreateInvitationInput) => request<CreatedInvitationDTO>("POST", "/invitations", input),

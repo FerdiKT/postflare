@@ -20,6 +20,7 @@ import { UsersPage } from "./pages/admin/UsersPage";
 import { ApplyPage } from "./pages/ApplyPage";
 import { AuthPage } from "./pages/AuthPage";
 import { RequestsPage } from "./pages/admin/RequestsPage";
+import { SupportPage } from "./pages/admin/SupportPage";
 import { CalendarPage } from "./pages/CalendarPage";
 import { ComposerProvider } from "./pages/composer/ComposerProvider";
 import { DashboardPage } from "./pages/DashboardPage";
@@ -186,6 +187,7 @@ function WorkspaceScope() {
                 <Route path="admin" element={<InstanceGate permission="instance.overview.view">{<OverviewPage />}</InstanceGate>} />
                 <Route path="admin/users" element={<InstanceGate permission="instance.users.manage">{<UsersPage />}</InstanceGate>} />
                 <Route path="admin/requests" element={<InstanceGate permission="instance.users.manage">{<RequestsPage />}</InstanceGate>} />
+                <Route path="admin/support" element={<InstanceGate permission="instance.support.manage">{<SupportPage />}</InstanceGate>} />
                 <Route path="admin/roles" element={<InstanceGate permission="instance.users.manage">{<RolesPage />}</InstanceGate>} />
                 <Route path="admin/settings" element={<InstanceGate permission="instance.settings.manage">{<InstanceSettingsPage />}</InstanceGate>} />
                 <Route path="admin/billing" element={<InstanceGate permission="instance.settings.manage">{<BillingAdminPage />}</InstanceGate>} />

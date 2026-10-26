@@ -144,3 +144,20 @@ ${button(reviewUrl, "Review")}`,
     ),
   };
 }
+
+/** Support chat: a staff reply the customer has not seen in the widget (docs/support-spec.md "Notifications"). */
+export function supportReplyEmail(to: string, opts: { team: string; staffName: string; number: number; reply: string; url: string | null }): OutgoingEmail {
+  const intro = `${opts.staffName} from ${opts.team} replied to your message (#${opts.number}):`;
+  const outro = opts.url ? "Open the page again to continue the chat." : "Reply in the chat on our website to continue.";
+  return {
+    to,
+    subject: `${opts.team}: new reply to your message (#${opts.number})`,
+    text: `${intro}\n\n${opts.reply}\n\n${outro}${opts.url ? `\n${opts.url}` : ""}\n`,
+    html: layout(
+      `New reply from ${escapeHtml(opts.team)}`,
+      `${p(intro)}${p(opts.reply, ";white-space:pre-wrap;border-left:3px solid #e4e4e7;padding-left:12px")}${
+        opts.url ? button(opts.url, "Continue the chat") : p(outro, ";font-size:13px")
+      }`,
+    ),
+  };
+}

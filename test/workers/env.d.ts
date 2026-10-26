@@ -42,5 +42,7 @@ declare namespace Cloudflare {
     LEGAL_DB: D1Database;
     /** Own instance for connecting accounts: the connect URL (switch account) and avatars copied to R2. */
     ACCOUNTS_DB: D1Database;
+    /** Own instance for the support chat (widget API and staff inbox). */
+    SUPPORT_DB: D1Database;
   }
 }

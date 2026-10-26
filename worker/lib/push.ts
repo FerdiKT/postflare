@@ -19,11 +19,13 @@ export interface DevicePrefs {
   failed: boolean;
   /** Instance admins: a new access request (only sent to users with instance.users.manage). */
   accessRequests: boolean;
+  /** Support staff: a customer wrote in the support chat (only sent to users with instance.support.manage). */
+  support: boolean;
   /** Only posts of these workspaces; null = every workspace the user can see posts of. */
   workspaces: string[] | null;
 }
 
-export const DEFAULT_PREFS: DevicePrefs = { published: true, failed: true, accessRequests: true, workspaces: null };
+export const DEFAULT_PREFS: DevicePrefs = { published: true, failed: true, accessRequests: true, support: true, workspaces: null };
 
 export function parsePrefs(json: string | null | undefined): DevicePrefs {
   return cleanPrefs(parseJson<unknown>(json, {}), DEFAULT_PREFS);
@@ -37,6 +39,7 @@ export function cleanPrefs(input: unknown, base: DevicePrefs): DevicePrefs {
   if (typeof src.published === "boolean") out.published = src.published;
   if (typeof src.failed === "boolean") out.failed = src.failed;
   if (typeof src.accessRequests === "boolean") out.accessRequests = src.accessRequests;
+  if (typeof src.support === "boolean") out.support = src.support;
   if (src.workspaces === null) out.workspaces = null;
   else if (Array.isArray(src.workspaces)) out.workspaces = [...new Set(src.workspaces.filter((w): w is string => typeof w === "string" && w.length <= 64))].slice(0, 100);
   return out;
@@ -93,7 +96,13 @@ export interface Alert {
 export function alertPayload(a: Alert) {
   return {
     aps: {
-      alert: { title: a.title, body: a.body, "title-loc-key": a.titleKey, "title-loc-args": a.titleArgs, "loc-key": a.bodyKey, "loc-args": a.bodyArgs },
+      // An empty key means the text is user content (support messages): no localization.
+      alert: {
+        title: a.title,
+        body: a.body,
+        ...(a.titleKey ? { "title-loc-key": a.titleKey, "title-loc-args": a.titleArgs } : {}),
+        ...(a.bodyKey ? { "loc-key": a.bodyKey, "loc-args": a.bodyArgs } : {}),
+      },
       sound: "default",
       "thread-id": a.threadId,
       ...(a.category ? { category: a.category } : {}),
@@ -187,6 +196,7 @@ export const PUSH_KEYS = {
   testBody: "PUSH_TEST_BODY",
   accessRequestTitle: "PUSH_ACCESS_REQUEST_TITLE",
   accessRequestBody: "PUSH_ACCESS_REQUEST_BODY",
+  supportTitle: "PUSH_SUPPORT_TITLE",
 } as const;
 
 interface PostPushRow extends PushDevice {
@@ -339,5 +349,41 @@ export function accessRequestAlert(id: string, name: string, who: string, role: 
     data: { type: "access_request", id },
     collapseId: id,
     expiration: Math.floor(Date.now() / 1000) + 7 * 86_400,
+  };
+}
+
+/**
+ * Devices of the users who answer support chats (instance.support.manage) with support pushes on, most recently used
+ * first; `exceptUser` (the staff member who just wrote) is skipped.
+ */
+export function supportPushStatement(env: Env, db: D1Database, t: number, exceptUser: string | null = null): D1PreparedStatement | null {
+  if (!apnsConfigured(env)) return null;
+  return db
+    .prepare(
+      `SELECT d.id, d.apns_token, d.environment FROM devices d
+       JOIN users u ON u.id = d.user_id AND u.status = 'active' AND u.is_demo = 0
+       JOIN roles r ON r.id = u.role_id AND EXISTS (SELECT 1 FROM json_each(r.permissions) WHERE value = 'instance.support.manage')
+       JOIN sessions s ON s.id = d.session_id AND s.kind = 'device' AND s.expires_at > ?
+       WHERE d.apns_token IS NOT NULL AND COALESCE(json_extract(d.prefs, '$.support'), 1) = 1 AND u.id IS NOT ?
+       ORDER BY s.last_used_at DESC LIMIT ${MAX_DEVICES_PER_EVENT}`,
+    )
+    .bind(t, exceptUser);
+}
+
+/** "Ann · #12" / the message: a customer wrote in the support chat. */
+export function supportAlert(id: string, number: number, who: string, message: string): Alert {
+  const title = `${who} · #${number}`;
+  return {
+    titleKey: PUSH_KEYS.supportTitle,
+    titleArgs: [who, String(number)],
+    bodyKey: "",
+    bodyArgs: [],
+    title,
+    body: snippet(message, 180),
+    threadId: `support-${id}`,
+    interruption: "active",
+    data: { type: "support_message", id },
+    collapseId: id,
+    expiration: Math.floor(Date.now() / 1000) + 2 * 86_400,
   };
 }

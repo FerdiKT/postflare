@@ -27,7 +27,7 @@ describe("0003_users_workspaces", () => {
     // 0007 grants instance.overview.view to the built-in instance Admin, 0008 playbooks.manage to Owner, Admin and Editor,
     // 0013 billing.manage to the Owner.
     const later: Record<string, string[]> = {
-      role_instance_admin: ["instance.overview.view"],
+      role_instance_admin: ["instance.overview.view", "instance.support.manage"],
       role_ws_owner: ["playbooks.manage", "billing.manage"],
       role_ws_admin: ["playbooks.manage"],
       role_ws_editor: ["playbooks.manage"],
@@ -37,6 +37,7 @@ describe("0003_users_workspaces", () => {
       /json_insert\(permissions, '\$\[#\]', 'playbooks\.manage'\)\s+WHERE id IN \('role_ws_owner', 'role_ws_admin', 'role_ws_editor'\)/,
     );
     expect(readFileSync("migrations/0013_billing.sql", "utf8")).toMatch(/json_insert\(permissions, '\$\[#\]', 'billing\.manage'\)\s+WHERE id = 'role_ws_owner'/);
+    expect(readFileSync("migrations/0021_support.sql", "utf8")).toMatch(/json_insert\(permissions, '\$\[#\]', 'instance\.support\.manage'\)\s+WHERE id = 'role_instance_admin'/);
     const insert = stmts.find((s) => s.startsWith("INSERT OR IGNORE INTO roles"))!;
     const rows = [...insert.matchAll(/\('(role_[a-z_]+)', '(instance|workspace)', '([^']+)', '[^']*', '(\[[^\]]*\])', 1, 0\)/g)];
     expect(rows.length).toBe(Object.keys(BUILTIN_ROLES).length);

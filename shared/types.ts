@@ -357,7 +357,8 @@ export type InstancePermission =
   | "instance.users.manage"
   | "instance.settings.manage"
   | "instance.workspaces.create"
-  | "instance.overview.view";
+  | "instance.overview.view"
+  | "instance.support.manage";
 
 export type WorkspacePermission =
   | "workspace.manage"
@@ -582,6 +583,8 @@ export interface DevicePrefsDTO {
   failed: boolean;
   /** Instance admins (instance.users.manage): a new access request arrived (default on). */
   accessRequests: boolean;
+  /** Users who answer support chats (instance.support.manage): a customer wrote (default on). */
+  support: boolean;
   /** Only these workspaces; null = all the user's workspaces. */
   workspaces: string[] | null;
 }
@@ -1648,4 +1651,86 @@ export interface AccessRequestReviewDTO {
   existingUser?: true;
   /** An email went to the applicant. */
   emailed: boolean;
+}
+
+// ---------- Support chat (docs/support-spec.md) ----------
+
+export type SupportStatus = "open" | "pending" | "closed";
+export type SupportAuthor = "customer" | "staff" | "note";
+
+export interface SupportMessageDTO {
+  id: string;
+  author: SupportAuthor;
+  /** Staff: the user's name ("Ferdi"); customer: their name or null. */
+  authorName: string | null;
+  body: string;
+  createdAt: number;
+}
+
+/** A conversation as the customer (widget) sees it. */
+export interface SupportConversationDTO {
+  id: string;
+  number: number;
+  status: SupportStatus;
+  subject: string | null;
+  name: string | null;
+  email: string | null;
+  /** Staff replies the customer has not seen. */
+  unread: number;
+  lastMessageAt: number;
+  lastMessagePreview: string | null;
+  lastAuthor: "customer" | "staff" | null;
+  createdAt: number;
+}
+
+/** A conversation as staff see it (inbox list and detail). */
+export interface SupportTicketDTO extends SupportConversationDTO {
+  /** Customer messages no staff member has opened yet. */
+  staffUnread: number;
+  source: "widget" | "app";
+  pageUrl: string | null;
+  userAgent: string | null;
+  country: string | null;
+  ip: string | null;
+  user: { id: string; name: string; email: string } | null;
+  workspace: { id: string; name: string } | null;
+  assignee: { id: string; name: string } | null;
+  customerSeenAt: number | null;
+  closedAt: number | null;
+  updatedAt: number;
+}
+
+export interface SupportThreadDTO<C = SupportConversationDTO> {
+  conversation: C;
+  messages: SupportMessageDTO[];
+}
+
+/** GET /api/admin/support/conversations */
+export interface SupportTicketListDTO {
+  items: SupportTicketDTO[];
+  counts: { open: number; pending: number; closed: number; unread: number };
+  /** Pass as `before` for the next page (last_message_at of the last item), null at the end. */
+  nextBefore: number | null;
+}
+
+/** GET /api/support/widget */
+export interface SupportWidgetDTO {
+  enabled: boolean;
+  teamName: string;
+  greeting: string;
+  /** The signed-in user answers chats (the widget hides itself). */
+  staff: boolean;
+  /** Signed in on this origin: the widget does not ask for an email. */
+  signedIn: boolean;
+}
+
+/** GET|PATCH /api/admin/support/settings */
+export interface SupportSettingsDTO {
+  enabled: boolean;
+  teamName: string;
+  greeting: string;
+  /** Email notifications to customers are possible (EMAIL binding + EMAIL_FROM). */
+  emailConfigured: boolean;
+  /** `<script>` tag to embed the widget on another website. */
+  snippet: string;
 }
