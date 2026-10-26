@@ -103,6 +103,12 @@ extension PushManager: UNUserNotificationCenterDelegate {
             await AppModel.shared.openNotification(info)
             return [.list]
         }
+        // A customer writing in the conversation that is open: it refreshes by itself, no banner.
+        if info["type"] == "support_message", let id = info["id"],
+           await MainActor.run(body: { AppModel.shared.isShowingSupportConversation(id) }) {
+            await MainActor.run { AppModel.shared.dataChanged() }
+            return [.list]
+        }
         await MainActor.run {
             AppModel.shared.dataChanged()
             WidgetCenter.shared.reloadAllTimelines()

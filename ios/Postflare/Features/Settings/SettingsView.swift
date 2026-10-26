@@ -10,6 +10,7 @@ struct SettingsView: View {
     @State private var scanError: String?
     @State private var serverVersion: String?
     @State private var pendingRequests: Int?
+    @State private var unreadSupport: Int?
 
     var body: some View {
         Form {
@@ -85,16 +86,30 @@ struct SettingsView: View {
                 Text("On the Postflare sign-in page, choose Sign in with the iPhone app and scan the code.")
             }
 
-            if model.canManageUsers {
+            if model.canManageUsers || model.canAnswerSupport {
                 Section {
-                    NavigationLink(value: Route.accessRequests) {
-                        Label("Access requests", systemImage: "person.crop.circle.badge.questionmark")
+                    if model.canAnswerSupport {
+                        NavigationLink(value: Route.support) {
+                            Label("Support", systemImage: "bubble.left.and.bubble.right")
+                        }
+                        .badge(unreadSupport ?? 0)
                     }
-                    .badge(pendingRequests ?? 0)
+                    if model.canManageUsers {
+                        NavigationLink(value: Route.accessRequests) {
+                            Label("Access requests", systemImage: "person.crop.circle.badge.questionmark")
+                        }
+                        .badge(pendingRequests ?? 0)
+                    }
                 } header: {
                     Text("Instance")
                 } footer: {
-                    Text("People who asked for an account on the web.")
+                    if model.canManageUsers && model.canAnswerSupport {
+                        Text("Support chats from your website, and people who asked for an account on the web.")
+                    } else if model.canManageUsers {
+                        Text("People who asked for an account on the web.")
+                    } else {
+                        Text("Support chats from your website.")
+                    }
                 }
             }
 
@@ -162,6 +177,10 @@ struct SettingsView: View {
         .task(id: "\(model.canManageUsers)#\(model.dataVersion)") {
             guard model.canManageUsers, let client = model.client else { return }
             if let n = try? await client.pendingAccessRequests() { pendingRequests = n }
+        }
+        .task(id: "\(model.canAnswerSupport)#\(model.dataVersion)") {
+            guard model.canAnswerSupport, let client = model.client else { return }
+            if let n = try? await client.supportCount() { unreadSupport = n.unread }
         }
         .refreshable { await model.refreshMe() }
     }
@@ -238,6 +257,9 @@ struct NotificationSettingsView: View {
                 Toggle(isOn: $prefs.failed) { Label("Failed posts and checks", systemImage: "exclamationmark.triangle") }
                 if model.canManageUsers {
                     Toggle(isOn: $prefs.accessRequests) { Label("Access requests", systemImage: "person.crop.circle.badge.questionmark") }
+                }
+                if model.canAnswerSupport {
+                    Toggle(isOn: $prefs.support) { Label("Support messages", systemImage: "bubble.left.and.bubble.right") }
                 }
             } header: {
                 Text("Notify me about")

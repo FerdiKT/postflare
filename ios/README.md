@@ -98,7 +98,7 @@ time, and approves with Face ID / Touch ID or the passcode (LocalAuthentication)
 ## Deep links
 
 `postflare://home`, `posts[/list|/calendar]`, `calendar`, `post/<id>`, `compose` (`?duplicate=<post id>`),
-`accounts`, `analytics`, `settings[/notifications|/devices|/access-requests[/<id>]]`, `notifications`, `pair?...`, `web-login?...`.
+`accounts`, `analytics`, `settings[/notifications|/devices|/access-requests[/<id>]|/support[/<id>]]`, `notifications`, `pair?...`, `web-login?...`.
 
 Debug builds accept `-PFOpenURL <url>` (open a deep link at launch) and `-PFSkipPushPrompt YES` for simulator
 automation, e.g. `xcrun simctl launch booted com.example.postflare -PFOpenURL postflare://posts -PFSkipPushPrompt YES`.
@@ -124,7 +124,8 @@ Server side: set `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_PRIVATE_KEY` and **`APNS_T
 (`POSTFLARE_BUNDLE_ID`), see the root README "iOS app → Push notifications (APNs)". The bundle id needs the Push
 Notifications capability (automatic signing adds it). Tapping `post_published`, `post_failed` or `post_needs_check`
 switches to the post's workspace and opens the post; `web_login` opens the approval sheet; `access_request` (`id`)
-opens Settings → Access requests → that request; `test` does nothing.
+opens Settings → Access requests → that request; `support_message` (`id`) opens Settings → Support → that
+conversation (no banner while that conversation is on screen); `test` does nothing.
 
 ## Access requests
 
@@ -135,6 +136,18 @@ sent; **Approve** (`PATCH /access-requests/:id { status: "approved" }`) shows th
 whether it was emailed, or that the email already has an account; **Reject** takes an optional note and "Email the
 applicant". An approved request whose invitation is unused offers **New invite link** (the old one stops working).
 The `accessRequests` device pref (Settings → Notifications, admins only) turns their pushes on or off.
+
+## Support
+
+Users who answer support chats (`instance.support.manage`) get Settings → **Support** (unread count from
+`GET /admin/support/count` as the badge), see [`docs/support-spec.md`](../docs/support-spec.md). The inbox filters by
+Open / Waiting (`pending`) / Closed / All with their counts, **Mine** (assigned to me), search (name, email, message,
+`#number`), 50 per page (`nextBefore`), and closes or reopens with a swipe. The conversation shows the thread (customer
+left, staff right, internal notes in yellow), the customer (contact, Postflare user and workspace, page, country,
+browser), and a composer: **Reply** (sets the conversation to Waiting), **Reply & close** or **Internal note**. The menu
+closes / reopens, marks waiting, assigns (`GET /admin/support/staff`) and deletes. Opening it marks it read; it refreshes
+every 5 s while on screen and the app is active. The `support` device pref (Settings → Notifications) turns the pushes
+on or off.
 
 ## Release (TestFlight)
 

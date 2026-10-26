@@ -140,13 +140,16 @@ struct DevicePrefs: Codable, Hashable, Sendable {
     var failed = true
     /// Instance admins (`instance.users.manage`): a new access request arrived.
     var accessRequests = true
+    /// Support staff (`instance.support.manage`): a customer wrote in a support chat.
+    var support = true
     /// nil = all the user's workspaces.
     var workspaces: [String]?
 
-    init(published: Bool = true, failed: Bool = true, accessRequests: Bool = true, workspaces: [String]? = nil) {
+    init(published: Bool = true, failed: Bool = true, accessRequests: Bool = true, support: Bool = true, workspaces: [String]? = nil) {
         self.published = published
         self.failed = failed
         self.accessRequests = accessRequests
+        self.support = support
         self.workspaces = workspaces
     }
 
@@ -155,6 +158,7 @@ struct DevicePrefs: Codable, Hashable, Sendable {
         published = try c.decodeIfPresent(Bool.self, forKey: .published) ?? true
         failed = try c.decodeIfPresent(Bool.self, forKey: .failed) ?? true
         accessRequests = try c.decodeIfPresent(Bool.self, forKey: .accessRequests) ?? true
+        support = try c.decodeIfPresent(Bool.self, forKey: .support) ?? true
         workspaces = try c.decodeIfPresent([String].self, forKey: .workspaces)
     }
 
@@ -164,10 +168,11 @@ struct DevicePrefs: Codable, Hashable, Sendable {
         try c.encode(published, forKey: .published)
         try c.encode(failed, forKey: .failed)
         try c.encode(accessRequests, forKey: .accessRequests)
+        try c.encode(support, forKey: .support)
         try c.encode(workspaces, forKey: .workspaces)
     }
 
-    private enum CodingKeys: String, CodingKey { case published, failed, accessRequests, workspaces }
+    private enum CodingKeys: String, CodingKey { case published, failed, accessRequests, support, workspaces }
 }
 
 struct Device: Codable, Hashable, Identifiable, Sendable {
@@ -310,6 +315,116 @@ struct AccessRequestReview: Codable, Hashable, Sendable {
     var existingUser: Bool?
     /// An email went to the applicant.
     var emailed: Bool
+}
+
+// MARK: - Support chat
+
+/// docs/support-spec.md: open | pending (waiting on the customer) | closed.
+enum SupportStatus: String, Codable, CaseIterable, Hashable, Sendable {
+    case open, pending, closed
+}
+
+/// One message of a support conversation. `note`: internal, never shown to the customer.
+struct SupportMessage: Codable, Hashable, Identifiable, Sendable {
+    enum Author: String, Codable, Hashable, Sendable { case customer, staff, note }
+
+    var id: String
+    var author: Author
+    /// Staff: the user's name; customer: their name or nil.
+    var authorName: String?
+    var body: String
+    var createdAt: Double
+}
+
+/// GET /api/admin/support/conversations[/:id] (instance.support.manage): a conversation as staff see it.
+struct SupportTicket: Codable, Hashable, Identifiable, Sendable {
+    struct UserRef: Codable, Hashable, Sendable {
+        var id: String
+        var name: String
+        var email: String
+    }
+
+    struct NamedRef: Codable, Hashable, Sendable {
+        var id: String
+        var name: String
+    }
+
+    var id: String
+    var number: Int
+    var status: SupportStatus
+    var subject: String?
+    var name: String?
+    var email: String?
+    /// Staff replies the customer has not seen.
+    var unread: Int
+    var lastMessageAt: Double
+    var lastMessagePreview: String?
+    /// customer | staff
+    var lastAuthor: String?
+    var createdAt: Double
+    /// Customer messages no staff member has opened yet.
+    var staffUnread: Int
+    /// widget | app
+    var source: String
+    var pageUrl: String?
+    var userAgent: String?
+    /// Two-letter country code.
+    var country: String?
+    var ip: String?
+    var user: UserRef?
+    var workspace: NamedRef?
+    var assignee: NamedRef?
+    var customerSeenAt: Double?
+    var closedAt: Double?
+    var updatedAt: Double
+
+    var isUnread: Bool { staffUnread > 0 }
+    /// The name, else the email, else "Visitor".
+    var displayName: String {
+        if let name, !name.trimmingCharacters(in: .whitespaces).isEmpty { return name }
+        if let email, !email.isEmpty { return email }
+        return String(localized: "Visitor")
+    }
+}
+
+struct SupportCounts: Codable, Hashable, Sendable {
+    var open = 0
+    var pending = 0
+    var closed = 0
+    var unread = 0
+}
+
+/// GET /api/admin/support/conversations
+struct SupportTicketList: Codable, Sendable {
+    var items: [SupportTicket]
+    var counts: SupportCounts
+    /// `before` of the next page; nil = no more.
+    var nextBefore: Double?
+}
+
+/// GET /api/admin/support/conversations/:id (marks it read).
+struct SupportThread: Codable, Hashable, Sendable {
+    var conversation: SupportTicket
+    var messages: [SupportMessage]
+}
+
+/// POST /api/admin/support/conversations/:id/messages
+struct SupportReply: Codable, Sendable {
+    var message: SupportMessage
+    var conversation: SupportTicket
+}
+
+/// GET /api/admin/support/staff: users who answer support chats (assignee picker).
+struct SupportStaff: Codable, Hashable, Identifiable, Sendable {
+    var id: String
+    var name: String
+    var email: String
+}
+
+/// GET /api/admin/support/count (badges).
+struct SupportBadgeCount: Codable, Sendable {
+    var unread: Int
+    var open: Int
 }
 
 // MARK: - Posts

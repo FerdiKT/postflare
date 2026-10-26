@@ -316,6 +316,59 @@ extension APIClient {
         return try await send("PATCH", "/access-requests/\(id)", body: Body(status: approve ? "approved" : "rejected", note: note, notify: notify))
     }
 
+    // Support chat (instance.support.manage, docs/support-spec.md): the staff inbox.
+    /// `status`: open | pending | closed | all; `mine`: assigned to me; `before`: `nextBefore` of the previous page.
+    func supportConversations(status: String, mine: Bool = false, query: String? = nil, limit: Int = 50, before: Double? = nil) async throws -> SupportTicketList {
+        try await get("/admin/support/conversations", query: [
+            "status": status, "mine": mine ? "1" : nil, "q": query.flatMap { $0.isEmpty ? nil : $0 },
+            "limit": String(limit), "before": before.map { String(Int64($0)) },
+        ])
+    }
+
+    /// The conversation with every message (notes included); marks the customer's messages read.
+    func supportConversation(_ id: String) async throws -> SupportThread { try await get("/admin/support/conversations/\(id)") }
+
+    /// A reply (sets `status`, by default pending on the server) or an internal note (changes nothing unless `status`).
+    func replySupport(_ id: String, body: String, note: Bool = false, status: SupportStatus? = nil) async throws -> SupportReply {
+        struct Body: Encodable { var body: String; var note: Bool; var status: SupportStatus? }
+        return try await send("POST", "/admin/support/conversations/\(id)/messages", body: Body(body: body, note: note, status: status))
+    }
+
+    /// What to change; `assigneeId: .some(nil)` unassigns.
+    struct SupportUpdate: Encodable {
+        var status: SupportStatus?
+        var assigneeId: String??
+        var subject: String?
+
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encodeIfPresent(status, forKey: .status)
+            // `assigneeId: null` unassigns, so a set-but-nil value is sent explicitly.
+            if let assigneeId { try c.encode(assigneeId, forKey: .assigneeId) }
+            try c.encodeIfPresent(subject, forKey: .subject)
+        }
+
+        enum CodingKeys: String, CodingKey { case status, assigneeId, subject }
+    }
+
+    func updateSupport(_ id: String, _ update: SupportUpdate) async throws -> SupportTicket {
+        struct Response: Decodable { var conversation: SupportTicket }
+        let r: Response = try await send("PATCH", "/admin/support/conversations/\(id)", body: update)
+        return r.conversation
+    }
+
+    func deleteSupport(_ id: String) async throws {
+        _ = try await send("DELETE", "/admin/support/conversations/\(id)", as: IgnoredResponse.self)
+    }
+
+    func supportStaff() async throws -> [SupportStaff] {
+        struct Response: Decodable { var items: [SupportStaff] }
+        let r: Response = try await get("/admin/support/staff")
+        return r.items
+    }
+
+    func supportCount() async throws -> SupportBadgeCount { try await get("/admin/support/count") }
+
     // Signing a browser in (docs/app-login-spec.md): `nonce` from a QR code, `number` for push requests.
     private struct WebLoginAnswer: Encodable { var nonce: String?; var number: Int? }
 

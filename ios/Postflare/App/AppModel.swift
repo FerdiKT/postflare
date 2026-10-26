@@ -12,6 +12,8 @@ enum Route: Hashable {
     case devices
     case accessRequests
     case accessRequest(id: String)
+    case support
+    case supportConversation(id: String)
 }
 
 /// What the composer opens with: empty, or a copy of a post (Duplicate).
@@ -76,6 +78,8 @@ final class AppModel {
     var canWrite: Bool { can("posts.write") }
     /// Instance admin: reviews access requests (`instance.users.manage`).
     var canManageUsers: Bool { me?.can("instance.users.manage") ?? false }
+    /// Answers support chats (`instance.support.manage`).
+    var canAnswerSupport: Bool { me?.can("instance.support.manage") ?? false }
 
     func account(_ id: String) -> Account? { accounts.first { $0.id == id } }
     func provider(_ id: String) -> ProviderInfo? { providers.first { $0.id == id } }
@@ -296,6 +300,8 @@ final class AppModel {
             case "devices": settingsPath = [.devices]
             case "access-requests" where canManageUsers:
                 settingsPath = [.accessRequests] + (parts.dropFirst().first.map { [.accessRequest(id: $0)] } ?? [])
+            case "support" where canAnswerSupport:
+                settingsPath = [.support] + (parts.dropFirst().first.map { [.supportConversation(id: $0)] } ?? [])
             default: settingsPath = []
             }
         case "notifications":
@@ -310,6 +316,17 @@ final class AppModel {
     func openAccessRequest(_ id: String) {
         tab = .settings
         settingsPath = [.accessRequests, .accessRequest(id: id)]
+    }
+
+    /// Settings → Support → the conversation.
+    func openSupportConversation(_ id: String) {
+        tab = .settings
+        settingsPath = [.support, .supportConversation(id: id)]
+    }
+
+    /// The support conversation is on screen (a push for it needs no banner).
+    func isShowingSupportConversation(_ id: String) -> Bool {
+        tab == .settings && settingsPath.last == .supportConversation(id: id)
     }
 
     func openPost(_ id: String) {
@@ -385,7 +402,8 @@ final class AppModel {
 
     // MARK: Notifications
 
-    /// Notification tap: `type` (post_published | post_failed | post_needs_check | web_login | access_request | test), `postId`,
+    /// Notification tap: `type` (post_published | post_failed | post_needs_check | web_login | access_request |
+    /// support_message | test), `postId`,
     /// `workspaceId`, `id` from the payload.
     func openNotification(_ info: [String: String]) async {
         switch info["type"] {
@@ -394,6 +412,10 @@ final class AppModel {
         case "access_request":
             guard phase == .signedIn, let id = info["id"] else { return }
             openAccessRequest(id)
+            dataChanged()
+        case "support_message":
+            guard phase == .signedIn, let id = info["id"] else { return }
+            openSupportConversation(id)
             dataChanged()
         case "post_published", "post_failed", "post_needs_check":
             guard phase == .signedIn, let postId = info["postId"] else { return }

@@ -151,6 +151,8 @@ extension View {
             case .devices: DevicesView()
             case .accessRequests: AccessRequestsView()
             case let .accessRequest(id): AccessRequestDetailView(requestId: id)
+            case .support: SupportInboxView()
+            case let .supportConversation(id): SupportConversationView(conversationId: id)
             }
         }
     }
