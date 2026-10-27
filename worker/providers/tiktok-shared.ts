@@ -184,9 +184,9 @@ export function tiktokValidate(name: string, post: PublishPost, maxPhotos: numbe
       errors.push(`${name}: ${img.filename} is ${img.width}x${img.height}; photos may be at most 1080px on the shorter side`);
   }
   if (post.settings.commercialContent && !post.settings.brandOrganic && !post.settings.brandContent)
-    errors.push(`${name}: select "Your brand" and/or "Branded content", or turn off commercial content disclosure`);
+    errors.push(`${name}: You need to indicate if your content promotes yourself, a third party, or both.`);
   if (post.settings.commercialContent && post.settings.brandContent && post.settings.privacy_level === "SELF_ONLY")
-    errors.push(`${name}: branded content cannot be posted with privacy "Only me"`);
+    errors.push(`${name}: Branded content visibility cannot be set to private.`);
   return errors;
 }
 

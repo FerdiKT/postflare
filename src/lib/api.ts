@@ -313,6 +313,7 @@ export const api = {
       request<{ ok: true; updated: number; groupId: string | null }>("POST", "/accounts/group", { accountIds, groupId }),
     remove: (id: string) => request<{ ok: true }>("DELETE", `/accounts/${id}`),
     refresh: (id: string) => request<AccountDTO>("POST", `/accounts/${id}/refresh`),
+    composerInfo: (id: string) => get<Record<string, unknown>>(`/accounts/${id}/composer-info`),
     options: (id: string, key: string, settings: Record<string, unknown>) =>
       get<FieldOption[]>(`/accounts/${id}/options/${encodeURIComponent(key)}?settings=${encodeURIComponent(JSON.stringify(settings))}`),
   },

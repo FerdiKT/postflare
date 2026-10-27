@@ -275,7 +275,7 @@ describe("tiktok content sharing guidelines", () => {
 
   it("requires a brand choice when commercial content is disclosed", () => {
     expect(tiktok.validate!(post({ privacy_level: "PUBLIC_TO_EVERYONE", commercialContent: true }))).toEqual([
-      expect.stringContaining("Your brand"),
+      expect.stringContaining("You need to indicate if your content promotes yourself, a third party, or both."),
     ]);
   });
 });

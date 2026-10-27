@@ -8,6 +8,18 @@ import type { FieldDef, FieldOption } from "../lib/types";
 import { useDebounced } from "../lib/useFetch";
 import { Field, Input, Select, Switch, Textarea, inputClass } from "./ui/Form";
 
+/**
+ * A field as the form shows it: platform panels (e.g. TikTok's creator_info rules) can disable a field or some of its
+ * options and say why.
+ */
+export type UiFieldDef = FieldDef & {
+  disabled?: boolean;
+  /** Shown under the field (why it is disabled, what it does now). */
+  note?: string;
+  /** select: option value → why it cannot be picked (shown on hover). */
+  disabledOptions?: Record<string, string>;
+};
+
 export function isVisible(field: FieldDef, values: Record<string, unknown>): boolean {
   if (!field.showIf) return true;
   const v = values[field.showIf.key];
@@ -15,7 +27,7 @@ export function isVisible(field: FieldDef, values: Record<string, unknown>): boo
   return v === field.showIf.equals || String(v ?? "") === String(field.showIf.equals);
 }
 
-export function visibleFields(fields: FieldDef[], values: Record<string, unknown>): FieldDef[] {
+export function visibleFields<F extends FieldDef>(fields: F[], values: Record<string, unknown>): F[] {
   return fields.filter((f) => isVisible(f, values));
 }
 
@@ -51,7 +63,7 @@ export function SettingsForm({
   showErrors = true,
   className,
 }: {
-  fields: FieldDef[];
+  fields: UiFieldDef[];
   values: Record<string, unknown>;
   onChange: (key: string, value: unknown) => void;
   accountId?: string;
@@ -67,11 +79,12 @@ export function SettingsForm({
         const wide = f.type === "textarea" || f.type === "tags" || f.type === "checkbox" || (f.help?.length ?? 0) > 60;
         if (f.type === "checkbox")
           return (
-            <label key={f.key} className="flex cursor-pointer items-start gap-3 sm:col-span-2">
-              <Switch checked={!!values[f.key]} onChange={(v) => onChange(f.key, v)} label={f.label} />
+            <label key={f.key} className={cn("flex items-start gap-3 sm:col-span-2", f.disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer")} title={f.disabled ? f.note : undefined}>
+              <Switch checked={!!values[f.key]} onChange={(v) => onChange(f.key, v)} label={f.label} disabled={f.disabled} />
               <span className="-mt-0.5">
                 <span className="block text-sm font-medium text-zinc-800 dark:text-zinc-200">{f.label}</span>
                 {f.help && <span className="block text-xs text-zinc-500 dark:text-zinc-400">{f.help}</span>}
+                {f.note && <span className="block text-xs text-amber-700 dark:text-amber-400">{f.note}</span>}
               </span>
             </label>
           );
@@ -80,7 +93,7 @@ export function SettingsForm({
             key={f.key}
             label={f.label}
             required={f.required}
-            help={f.help}
+            help={f.note ? `${f.help ? `${f.help} ` : ""}${f.note}` : f.help}
             error={showErrors ? errors[f.key] : undefined}
             className={wide ? "sm:col-span-2" : undefined}
           >
@@ -104,7 +117,7 @@ function FieldInput({
   invalid,
 }: {
   id: string;
-  field: FieldDef;
+  field: UiFieldDef;
   value: unknown;
   values: Record<string, unknown>;
   onChange: (v: unknown) => void;
@@ -197,14 +210,15 @@ function PasswordInput({ id, value, placeholder, onChange, invalid }: { id: stri
   );
 }
 
-function StaticSelect({ id, field, value, options, onChange }: { id: string; field: FieldDef; value: string; options: FieldOption[]; onChange: (v: unknown) => void }) {
+function StaticSelect({ id, field, value, options, onChange }: { id: string; field: UiFieldDef; value: string; options: FieldOption[]; onChange: (v: unknown) => void }) {
   const all = value && !options.some((o) => o.value === value) ? [{ value, label: value }, ...options] : options;
   return (
-    <Select id={id} value={value} onChange={(e) => onChange(e.target.value || undefined)}>
+    <Select id={id} value={value} onChange={(e) => onChange(e.target.value || undefined)} disabled={field.disabled}>
       {(!field.required || !value) && <option value="">{field.placeholder ?? "Select…"}</option>}
       {all.map((o) => (
-        <option key={o.value} value={o.value}>
+        <option key={o.value} value={o.value} disabled={!!field.disabledOptions?.[o.value]} title={field.disabledOptions?.[o.value]}>
           {o.label}
+          {field.disabledOptions?.[o.value] ? ` (${field.disabledOptions[o.value]})` : ""}
         </option>
       ))}
     </Select>
@@ -223,7 +237,7 @@ function DynamicSelect({
   mode,
 }: {
   id: string;
-  field: FieldDef;
+  field: UiFieldDef;
   value: unknown;
   values: Record<string, unknown>;
   accountId: string;

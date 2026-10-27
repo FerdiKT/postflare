@@ -224,6 +224,11 @@ export interface Provider extends Omit<ProviderInfo, "auth" | "analytics" | "sta
   profile?(ctx: ProviderContext, account: AccountRecord): Promise<{ avatarUrl: string | null }>;
   /** Choices for a `dynamicOptions` field (boards, subreddits, channels, playlists...). */
   options?(ctx: ProviderContext, account: AccountRecord, key: string, settings: Record<string, unknown>): Promise<FieldOption[]>;
+  /**
+   * What the composer must know about the account right before posting (TikTok: creator_info, read each time the
+   * settings render, as TikTok's content sharing guidelines require).
+   */
+  composerInfo?(ctx: ProviderContext, account: AccountRecord): Promise<Record<string, unknown>>;
   /** Extra validation beyond capabilities. Return error messages. */
   validate?(post: PublishPost): string[];
 

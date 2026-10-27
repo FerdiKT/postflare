@@ -85,6 +85,21 @@ accountRoutes.post("/accounts/:id/refresh", requirePermission("accounts.manage")
   return c.json(accountDto(fresh));
 });
 
+/** GET /api/accounts/:id/composer-info: what the platform says about posting right now (TikTok creator_info). */
+accountRoutes.get("/accounts/:id/composer-info", requirePermission("posts.write"), async (c) => {
+  const row = await findAccount(c.env, wsId(c), c.req.param("id"));
+  const provider = row && getProvider(row.provider);
+  if (!row || !provider) return c.json({ error: "Not found" }, 404);
+  if (!provider.composerInfo || c.var.workspace?.demo) return c.json({});
+  try {
+    const ctx = await providerContext(c.env, provider, { requestUrl: c.req.url });
+    const account = await freshAccount(c.env, provider, ctx, row);
+    return c.json(await provider.composerInfo(ctx, account));
+  } catch (err) {
+    return c.json({ error: errorMessage(err) }, err instanceof ProviderError && err.kind === "auth" ? 409 : 400);
+  }
+});
+
 // Used by the composer to fill dynamic settings fields (boards, channels...), so it needs posts.write.
 accountRoutes.get("/accounts/:id/options/:key", requirePermission("posts.write"), async (c) => {
   const row = await findAccount(c.env, wsId(c), c.req.param("id"));

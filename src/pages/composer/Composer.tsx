@@ -24,6 +24,7 @@ import { ItemEditor } from "./ItemEditor";
 import { PlaybookPanel, PlaybookPicker, type PlaybookRef } from "./PlaybookPicker";
 import { attributeErrors, checkAccount, effectiveItem, emptyItem, type ComposerState, type Issue, type Item } from "./model";
 import { PlatformPreview } from "../../components/posts/PlatformPreview";
+import { TikTokSettings } from "./TikTokSettings";
 import { SchedulePicker, defaultScheduleTime } from "./SchedulePicker";
 
 type Mode = "schedule" | "now" | "draft";
@@ -409,6 +410,7 @@ export default function Composer({ options, onClose }: { options: ComposerOption
                 settings={state.settings}
                 setSetting={setSetting}
                 showErrors={showErrors}
+                mediaOf={(a) => effectiveItem(state, a.id, providerOf(a)).media}
               />
             </>
           ) : (
@@ -551,12 +553,14 @@ function SettingsSections({
   settings,
   setSetting,
   showErrors,
+  mediaOf,
 }: {
   accounts: AccountDTO[];
   providerOf: (a: AccountDTO) => Provider | undefined;
   settings: Record<string, Record<string, unknown>>;
   setSetting: (accountId: string, key: string, value: unknown) => void;
   showErrors: boolean;
+  mediaOf: (a: AccountDTO) => string[];
 }) {
   const withFields = accounts.filter((a) => (providerOf(a)?.settingsFields.length ?? 0) > 0);
   if (!withFields.length) return null;
@@ -566,7 +570,7 @@ function SettingsSections({
         <Settings2 className="size-3.5" /> Platform settings
       </h3>
       {withFields.map((a) => (
-        <SettingsSection key={a.id} account={a} provider={providerOf(a)!} values={settings[a.id] ?? {}} onChange={(k, v) => setSetting(a.id, k, v)} showErrors={showErrors} />
+        <SettingsSection key={a.id} account={a} provider={providerOf(a)!} values={settings[a.id] ?? {}} onChange={(k, v) => setSetting(a.id, k, v)} showErrors={showErrors} media={mediaOf(a)} />
       ))}
     </section>
   );
@@ -578,12 +582,14 @@ function SettingsSection({
   values,
   onChange,
   showErrors,
+  media,
 }: {
   account: AccountDTO;
   provider: Provider;
   values: Record<string, unknown>;
   onChange: (k: string, v: unknown) => void;
   showErrors: boolean;
+  media: string[];
 }) {
   const errors = fieldErrors(provider.settingsFields, values);
   const missing = Object.keys(errors).length;
@@ -608,8 +614,14 @@ function SettingsSection({
       </button>
       {open && (
         <div className="border-t border-zinc-100 p-4 dark:border-zinc-800">
-          <SettingsForm fields={provider.settingsFields} values={values} onChange={onChange} accountId={account.id} errors={errors} showErrors={showErrors} />
-          {provider.composerNotice && <ComposerNotice text={provider.composerNotice} />}
+          {isTikTok(provider) ? (
+            <TikTokSettings account={account} provider={provider} values={values} onChange={onChange} errors={errors} showErrors={showErrors} media={media} />
+          ) : (
+            <>
+              <SettingsForm fields={provider.settingsFields} values={values} onChange={onChange} accountId={account.id} errors={errors} showErrors={showErrors} />
+              {provider.composerNotice && <ComposerNotice text={provider.composerNotice} />}
+            </>
+          )}
         </div>
       )}
     </div>
@@ -697,20 +709,37 @@ function AccountTab({
           <h3 className="mb-4 flex items-center gap-1.5 text-sm font-semibold">
             <Settings2 className="size-4 text-zinc-400" /> {provider.name} settings
           </h3>
-          <SettingsForm
-            fields={provider.settingsFields}
-            values={values}
-            onChange={(k, v) => setSetting(account.id, k, v)}
-            accountId={account.id}
-            errors={errors}
-            showErrors={showErrors}
-          />
-          {provider.composerNotice && <ComposerNotice text={provider.composerNotice} />}
+          {isTikTok(provider) ? (
+            <TikTokSettings
+              account={account}
+              provider={provider}
+              values={values}
+              onChange={(k, v) => setSetting(account.id, k, v)}
+              errors={errors}
+              showErrors={showErrors}
+              media={effectiveItem(state, account.id, provider).media}
+            />
+          ) : (
+            <>
+              <SettingsForm
+                fields={provider.settingsFields}
+                values={values}
+                onChange={(k, v) => setSetting(account.id, k, v)}
+                accountId={account.id}
+                errors={errors}
+                showErrors={showErrors}
+              />
+              {provider.composerNotice && <ComposerNotice text={provider.composerNotice} />}
+            </>
+          )}
         </section>
       )}
     </div>
   );
 }
+
+/** TikTok accounts get the creator_info-driven settings (TikTok content sharing guidelines). */
+const isTikTok = (p: Provider) => p.id === "tiktok" || p.id === "tiktok_business";
 
 function ComposerNotice({ text }: { text: string }) {
   return (

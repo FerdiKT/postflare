@@ -436,6 +436,19 @@ export const tiktok: Provider = {
     return fetchStatus(ctx, token(account), s);
   },
 
+  async composerInfo(ctx, account) {
+    const info = await creatorInfo(ctx, token(account));
+    return {
+      nickname: info.creator_nickname ?? null,
+      username: info.creator_username ?? null,
+      privacyLevelOptions: info.privacy_level_options ?? [],
+      commentDisabled: !!info.comment_disabled,
+      duetDisabled: !!info.duet_disabled,
+      stitchDisabled: !!info.stitch_disabled,
+      maxVideoPostDurationSec: info.max_video_post_duration_sec ?? null,
+    };
+  },
+
   async options(ctx, account, key) {
     if (key !== "privacy_level") return [];
     const info = await creatorInfo(ctx, token(account));
