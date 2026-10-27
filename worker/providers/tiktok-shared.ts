@@ -16,6 +16,9 @@ export function tiktokAuthorizeUrl(ctx: ProviderContext, name: string, scopes: s
     response_type: "code",
     redirect_uri: ctx.redirectUri,
     state,
+    // Always show TikTok's authorization page (with "Switch account"), even when the user approved the app before:
+    // the creator sees which account they connect and what Postflare asks for.
+    disable_auto_auth: "1",
     ...extra,
   }).toString();
   return url.toString();
