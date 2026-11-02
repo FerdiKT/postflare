@@ -583,6 +583,24 @@ async function addAnalytics(ctx: ProviderContext, token: string, account: { meta
   }
 }
 
+/**
+ * The top-level comment a YouTube follow-up answers, or null when it comments on the video itself. `parentId` is the
+ * video (first comment), a top-level comment / thread id, or a reply id ("<top-level id>.<reply id>"); a link with
+ * `lc=` (watch?v=…&lc=…, shorts/…?lc=…) also works.
+ */
+export function youtubeReplyParent(target: { rootId: string; parentId?: string | null }): string | null {
+  let id = String(target.parentId ?? "").trim();
+  if (/^https?:\/\//i.test(id)) {
+    try {
+      id = new URL(id).searchParams.get("lc") ?? "";
+    } catch {
+      id = "";
+    }
+  }
+  if (!id || id === target.rootId) return null;
+  return id.split(".")[0] || null;
+}
+
 export const youtube: Provider = {
   id: "youtube",
   name: NAME,
@@ -810,9 +828,24 @@ export const youtube: Provider = {
   async reply(ctx, account, target, post) {
     if (!post.content.trim()) throw new ProviderError("YouTube comments must contain text", "invalid");
     if (post.media.length) ctx.log("warn", "YouTube comments cannot contain media; attachments were ignored");
+    const token = String(account.credentials.accessToken);
+    const parent = youtubeReplyParent(target);
+    // A reply to a comment: comments.insert with the top-level comment as parent (YouTube threads are one level deep,
+    // so answering a reply goes under the same top-level comment).
+    if (parent) {
+      const res = await yt<{ id: string }>(ctx, `${API}/comments`, {
+        method: "POST",
+        token,
+        query: { part: "snippet" },
+        json: { snippet: { parentId: parent, textOriginal: post.content } },
+        commit: true,
+      });
+      return { externalId: res.id, url: `https://www.youtube.com/watch?v=${target.rootId}&lc=${res.id}` };
+    }
+    // A comment on the video itself (first comment): commentThreads.insert.
     const res = await yt<{ id: string }>(ctx, `${API}/commentThreads`, {
       method: "POST",
-      token: String(account.credentials.accessToken),
+      token,
       query: { part: "snippet" },
       json: { snippet: { videoId: target.rootId, topLevelComment: { snippet: { textOriginal: post.content } } } },
       commit: true,

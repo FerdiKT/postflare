@@ -468,26 +468,41 @@ export const postsResolve: Command = {
   },
 };
 
+/**
+ * The platform id of a reply given as an id or a link: YouTube comment links carry it in `lc=`
+ * (watch?v=…&lc=<id>, shorts/…?lc=<id>); elsewhere it is the last path segment (x.com/u/status/<id>,
+ * bsky…/post/<rkey>, threads…/post/<id>).
+ */
+export function replyTargetId(to: string): string | undefined {
+  if (!/^https?:\/\//i.test(to)) return to;
+  const u = new URL(to);
+  return u.searchParams.get("lc") ?? u.pathname.split("/").filter(Boolean).pop();
+}
+
 export const postsComment: Command = {
   name: "posts comment",
   args: "<id>",
   summary: "Add a comment (or thread reply) under a published post, right away.",
   options: {
     text: { type: "string", short: "t", arg: "<text>", description: "Comment text" },
-    "reply-to": { type: "string", arg: "<id|url>", description: "Answer this reply under the post (its id or link, e.g. an X reply) instead of the post itself" },
+    "reply-to": {
+      type: "string",
+      arg: "<id|url>",
+      description: "Answer this reply under the post (its id or link, e.g. an X reply or a YouTube comment link with lc=) instead of the post itself",
+    },
   },
   min: 1,
   max: 1,
   examples: [
     'postflare posts comment pst_abc --text "Answer: DENIED. Her passport expires too soon."',
     'postflare posts comment pst_abc --reply-to https://x.com/someone/status/123 --text "Thanks!"',
+    'postflare posts comment pst_abc --reply-to "https://www.youtube.com/watch?v=VID&lc=UgxCOMMENT" --text "Thanks!"',
   ],
   async run(ctx, { values, positionals }) {
     const content = str(values.text)?.trim();
     if (!content) throw new UsageError("--text is required", "posts comment");
     const to = str(values["reply-to"])?.trim();
-    // A link to the reply: its id is the last path segment (x.com/u/status/<id>, bsky…/post/<rkey>, threads…/post/<id>).
-    const replyTo = to && /^https?:\/\//i.test(to) ? new URL(to).pathname.split("/").filter(Boolean).pop() : to;
+    const replyTo = to ? replyTargetId(to) : undefined;
     const r = await ctx.api.request<{ externalId: string; url: string | null }>("POST", `/posts/${encodeURIComponent(positionals[0])}/comments`, {
       body: { content, ...(replyTo ? { replyTo } : {}) },
     });

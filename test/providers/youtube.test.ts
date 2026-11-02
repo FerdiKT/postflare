@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { youtube } from "../../worker/providers/youtube";
+import { youtubeReplyParent, youtube } from "../../worker/providers/youtube";
 import { counted } from "../../worker/providers/budget";
 import { MetricsUnavailableError, ProviderError } from "../../worker/providers/errors";
 import { hollowMedia, image, json, lazyStream, mockFetch, testAccount, testContext, video } from "../helpers";
@@ -233,6 +233,29 @@ describe("youtube", () => {
     });
     expect(r).toEqual({ externalId: "CMT1", url: "https://www.youtube.com/watch?v=VID123&lc=CMT1" });
     expect(m.requests[0].json).toEqual({ snippet: { videoId: "VID123", topLevelComment: { snippet: { textOriginal: "First!" } } } });
+  });
+
+  it("answers a comment under the comment (comments.insert with parentId), not as a new comment on the video", async () => {
+    const m = mockFetch([["POST https://www.googleapis.com/youtube/v3/comments", () => ({ id: "UgxTOP.9REPLY" })]]);
+    const r = await youtube.reply!(testContext(m.fetch, app), testAccount(), { rootId: "VID123", parentId: "UgxTOP" }, {
+      id: "p1-c1",
+      content: "Thanks for watching!",
+      media: [],
+      settings: {},
+    });
+    expect(m.requests).toHaveLength(1);
+    expect(m.requests[0].url).toContain("/youtube/v3/comments?");
+    expect(m.requests[0].json).toEqual({ snippet: { parentId: "UgxTOP", textOriginal: "Thanks for watching!" } });
+    expect(r).toEqual({ externalId: "UgxTOP.9REPLY", url: "https://www.youtube.com/watch?v=VID123&lc=UgxTOP.9REPLY" });
+  });
+
+  it("answers a reply under its top-level comment, and takes comment links (lc=)", () => {
+    expect(youtubeReplyParent({ rootId: "VID123", parentId: "VID123" })).toBeNull();
+    expect(youtubeReplyParent({ rootId: "VID123", parentId: "" })).toBeNull();
+    expect(youtubeReplyParent({ rootId: "VID123", parentId: "UgxTOP" })).toBe("UgxTOP");
+    expect(youtubeReplyParent({ rootId: "VID123", parentId: "UgxTOP.9REPLY" })).toBe("UgxTOP");
+    expect(youtubeReplyParent({ rootId: "VID123", parentId: "https://www.youtube.com/watch?v=VID123&lc=UgxTOP.9REPLY" })).toBe("UgxTOP");
+    expect(youtubeReplyParent({ rootId: "VID123", parentId: "https://youtube.com/shorts/VID123?lc=UgyABC" })).toBe("UgyABC");
   });
 
   it("loads categories and playlists", async () => {

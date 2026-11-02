@@ -98,6 +98,10 @@ postflare posts --status failed  # then: posts show <id>, fix with posts edit, p
 then `posts resolve <id> --published [--url URL]` if it is live, or `posts resolve <id> --retry` if it is not
 (retrying a post that did go through publishes a duplicate). List them with `posts --status needs_check`.
 
+Answering comments on a published post: `posts comment <id> --text "..."` comments on the post itself;
+`--reply-to <comment id or link>` answers that comment under it (X/Bluesky/Threads reply links, YouTube comment links
+with `lc=`; on YouTube a reply to a reply goes under the same top-level comment).
+
 ## 7. App Store apps: tracked links, installs and revenue
 
 When a post promotes an App Store app, tag it so Postflare can measure clicks, installs and proceeds per post.
