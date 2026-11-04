@@ -44,5 +44,7 @@ declare namespace Cloudflare {
     ACCOUNTS_DB: D1Database;
     /** Own instance for the support chat (widget API and staff inbox). */
     SUPPORT_DB: D1Database;
+    /** Own instance for "delete after publishing" (media gc, media status, tombstones). */
+    MEDIA_GC_DB: D1Database;
   }
 }

@@ -656,7 +656,7 @@ describe("media lifecycle", () => {
   it("retention 0 keeps everything except unfinished uploads", async () => {
     await run("INSERT INTO settings (key, value) VALUES ('media_retention_days', '0') ON CONFLICT(key) DO UPDATE SET value = excluded.value");
     const stats = await sweepMedia(E);
-    expect(stats).toEqual({ expired: 0, staleUploads: 1, unusedLinkMedia: 0 });
+    expect(stats).toEqual({ expired: 0, staleUploads: 1, unusedLinkMedia: 0, published: 0 });
     expect(await exists("med_upl_stale")).toBe(false);
     expect(await exists("med_upl_fresh")).toBe(true);
     expect(await exists("med_old_unused")).toBe(true);
@@ -681,7 +681,7 @@ describe("media lifecycle", () => {
     }
     expect(await env.MEDIA.head("med_old_draft/f.png")).not.toBeNull();
     // Nothing left to do.
-    expect(await sweepMedia(E)).toEqual({ expired: 0, staleUploads: 0, unusedLinkMedia: 0 });
+    expect(await sweepMedia(E)).toEqual({ expired: 0, staleUploads: 0, unusedLinkMedia: 0, published: 0 });
   });
 
   it("media used by a draft, scheduled or unresolved post cannot be deleted", async () => {

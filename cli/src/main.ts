@@ -4,7 +4,7 @@ import { groups, groupsCreate, groupsRename, groupsRm } from "./commands/groups.
 import { apps, appsAdd, appsBioLink, appsImport, appsRm, links } from "./commands/apps.js";
 import { analytics, analyticsRefresh, analyticsTop } from "./commands/analytics.js";
 import { login, logout, whoami, workspaces } from "./commands/auth.js";
-import { mediaAlias, mediaImport, mediaList, mediaRm, mediaUpload } from "./commands/media.js";
+import { mediaAlias, mediaGc, mediaImport, mediaList, mediaRm, mediaStatus, mediaUpload } from "./commands/media.js";
 import { playbooks, playbooksSearch, playbooksShow, playbooksStats } from "./commands/playbooks.js";
 import { post, posts, postsCancel, postsComment, postsEdit, postsResolve, postsRetry, postsRm, postsShow } from "./commands/posts.js";
 import { skillInstall } from "./commands/skill.js";
@@ -33,6 +33,8 @@ export const COMMANDS: Command[] = [
   mediaList,
   mediaImport,
   mediaRm,
+  mediaGc,
+  mediaStatus,
   mediaAlias,
   post,
   posts,
@@ -64,7 +66,7 @@ export const COMMANDS: Command[] = [
 const GROUPS: Array<[string, string[]]> = [
   ["Setup", ["login", "logout", "whoami", "workspaces", "version", "skill install"]],
   ["Accounts & platforms", ["accounts", "accounts options", "accounts group", "groups", "groups create", "groups rename", "groups rm", "platforms"]],
-  ["Media", ["media upload", "media list", "media import", "media rm", "upload-link"]],
+  ["Media", ["media upload", "media list", "media import", "media rm", "media status", "media gc", "upload-link"]],
   ["Posts", ["post", "posts", "posts show", "posts edit", "posts cancel", "posts retry", "posts resolve", "posts comment", "posts rm"]],
   ["Playbooks", ["playbooks", "playbooks search", "playbooks show", "playbooks stats"]],
   ["Analytics", ["analytics", "analytics top", "analytics refresh"]],

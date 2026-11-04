@@ -314,6 +314,48 @@ export interface MediaUsageDTO {
   freeTierBytes: number;
   /** Instance setting: media older than this is removed when no longer needed; 0 = keep forever. */
   retentionDays: number;
+  /** Instance setting: files whose posts are all published are removed this many days after the last one; 0 = off. */
+  publishedRetentionDays: number;
+}
+
+/** POST /api/media/gc */
+export interface MediaGcDTO {
+  dryRun: boolean;
+  days: number;
+  /** Files removed (or, with dryRun, that would be). */
+  count: number;
+  bytes: number;
+  items: Array<{ id: string; filename: string; size: number }>;
+}
+
+/** GET /api/media/status */
+export interface MediaStatusDTO {
+  /** The newest matching file is used by at least one post and every one of them (cancelled aside) is published. */
+  published: boolean;
+  /** Matching files, newest first (the same filename can be uploaded more than once). */
+  matches: Array<{
+    id: string;
+    filename: string;
+    size: number;
+    createdAt: number;
+    /** false: removed from storage (sweep, media gc, or deleted by hand). */
+    inStorage: boolean;
+    deletedAt: number | null;
+    deletedReason: string | null;
+    published: boolean;
+    /** Posts using it that are not published yet (draft, scheduled, publishing, needs_check, failed). */
+    pending: number;
+    posts: Array<{
+      id: string;
+      status: PostStatus;
+      accountId: string;
+      accountName: string | null;
+      provider: string | null;
+      scheduledAt: number | null;
+      publishedAt: number | null;
+      url: string | null;
+    }>;
+  }>;
 }
 
 export interface PostLogDTO {

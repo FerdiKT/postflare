@@ -80,6 +80,19 @@ export function defaultProvidersStatement(db: D1Database, workspaceId: string): 
     .bind(workspaceId);
 }
 
+/**
+ * Instance setting "Delete after publishing (days)": media whose posts are all published (on platforms that keep their
+ * own copy) is removed this many days after the last of them went out. 0 = off. See lib/media-lifecycle.ts.
+ */
+export const MEDIA_PUBLISHED_RETENTION_SETTING = "media_published_retention_days";
+export const DEFAULT_MEDIA_PUBLISHED_RETENTION_DAYS = 3;
+
+export async function mediaPublishedRetentionDays(db: D1Database): Promise<number> {
+  const v = await getSetting(db, MEDIA_PUBLISHED_RETENTION_SETTING);
+  const n = v === null ? NaN : Number(v);
+  return Number.isInteger(n) && n >= 0 ? n : DEFAULT_MEDIA_PUBLISHED_RETENTION_DAYS;
+}
+
 /** Instance setting "Media retention (days)": see lib/media-lifecycle.ts. 0 keeps media forever. */
 export const MEDIA_RETENTION_SETTING = "media_retention_days";
 export const DEFAULT_MEDIA_RETENTION_DAYS = 30;

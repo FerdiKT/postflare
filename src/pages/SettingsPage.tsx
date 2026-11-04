@@ -843,19 +843,25 @@ function StorageSection() {
   const toast = useToast();
   const usage = useFetch(can("media.read") ? "media-usage" : null, api.media.usage, ["media", "settings"]);
   const [days, setDays] = useState("30");
+  const [pubDays, setPubDays] = useState("3");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    if (settings) setDays(String(settings.mediaRetentionDays ?? 30));
+    if (settings) {
+      setDays(String(settings.mediaRetentionDays ?? 30));
+      setPubDays(String(settings.mediaPublishedRetentionDays ?? 3));
+    }
   }, [settings]);
   const n = Number(days);
-  const invalid = days.trim() === "" || !Number.isInteger(n) || n < 0 || n > 3650;
+  const p = Number(pubDays);
+  const bad = (v: string, x: number) => v.trim() === "" || !Number.isInteger(x) || x < 0 || x > 3650;
+  const invalid = bad(days, n) || bad(pubDays, p);
 
   async function save(e: FormEvent) {
     e.preventDefault();
     if (invalid) return;
     setBusy(true);
     try {
-      await api.settings.save({ mediaRetentionDays: n });
+      await api.settings.save({ mediaRetentionDays: n, mediaPublishedRetentionDays: p });
       toast.success("Settings saved");
       invalidate("settings");
     } catch (err) {
@@ -876,7 +882,7 @@ function StorageSection() {
             <form onSubmit={save} className="space-y-5">
               <Field
                 label="Media retention (days)"
-                error={invalid ? "Enter a whole number from 0 to 3650" : undefined}
+                error={bad(days, n) ? "Enter a whole number from 0 to 3650" : undefined}
                 help={
                   <>
                     A daily job deletes media older than this that no scheduled, draft, failed or needs-check post uses. Media of
@@ -895,13 +901,44 @@ function StorageSection() {
                     max={3650}
                     step={1}
                     value={days}
-                    invalid={invalid}
+                    invalid={bad(days, n)}
                     onChange={(e) => setDays(e.target.value)}
                     className="w-32"
                   />
                 )}
               </Field>
-              <Button type="submit" variant="primary" loading={busy} disabled={invalid || n === (settings.mediaRetentionDays ?? 30)}>
+              <Field
+                label="Delete after publishing (days)"
+                error={bad(pubDays, p) ? "Enter a whole number from 0 to 3650" : undefined}
+                help={
+                  <>
+                    Once every post using a file is published (on platforms that keep their own copy), the daily job deletes the file this many
+                    days after the last one went out. Files of draft, scheduled, failed or needs-check posts are never touched. Run it now with{" "}
+                    <code className="font-mono text-xs">postflare media gc</code>. 0 turns it off.
+                  </>
+                }
+              >
+                {(id) => (
+                  <Input
+                    id={id}
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    max={3650}
+                    step={1}
+                    value={pubDays}
+                    invalid={bad(pubDays, p)}
+                    onChange={(e) => setPubDays(e.target.value)}
+                    className="w-32"
+                  />
+                )}
+              </Field>
+              <Button
+                type="submit"
+                variant="primary"
+                loading={busy}
+                disabled={invalid || (n === (settings.mediaRetentionDays ?? 30) && p === (settings.mediaPublishedRetentionDays ?? 3))}
+              >
                 Save
               </Button>
             </form>

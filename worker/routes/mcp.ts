@@ -187,6 +187,25 @@ export function mcpRoutes(api: { fetch: (req: Request, env: Env, ctx: ExecutionC
       inputSchema: { type: "object", properties: { limit: { type: "number" } } },
       run: (c, a) => call(c, "GET", `/media?limit=${encodeURIComponent(String(a.limit ?? 30))}`),
     },
+    gc_media: {
+      description:
+        "Delete this workspace's media files whose posts are all published, `days` (default: the instance's \"Delete after publishing\", else 3) after the last " +
+        "one went out. Files of draft/scheduled/failed/needs_check posts are never touched. dryRun lists them only. Up to 100 files per call.",
+      inputSchema: { type: "object", properties: { dryRun: { type: "boolean" }, days: { type: "number" } } },
+      run: (c, a) => call(c, "POST", "/media/gc", { ...(a.dryRun !== undefined ? { dryRun: !!a.dryRun } : {}), ...(a.days !== undefined ? { days: Number(a.days) } : {}) }),
+    },
+    get_media_status: {
+      description:
+        "Was a file published? Pass the media id, or the file name (optionally its size in bytes). `published` is true when every post using the newest " +
+        "matching file (cancelled aside) is published; also answers after the file was removed from storage. Use it before deleting a local copy.",
+      inputSchema: { type: "object", properties: { id: { type: "string" }, filename: { type: "string" }, size: { type: "number" } } },
+      run: (c, a) =>
+        call(
+          c,
+          "GET",
+          `/media/status?${new URLSearchParams(Object.entries({ id: a.id, filename: a.filename, size: a.size }).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => [k, String(v)])).toString()}`,
+        ),
+    },
     create_post: {
       description:
         "Create a post on one or more accounts. `scheduledAt` is an ISO date, \"now\" to publish immediately, or null for a draft. Per-account `content`, `settings`, `media` and `thread` override the shared values. " +

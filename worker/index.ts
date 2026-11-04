@@ -209,6 +209,7 @@ export async function dailyJobs(env: Env): Promise<void> {
     expireMetricsSchedules(env),
     sweepMedia(env),
     env.DB.prepare("DELETE FROM oauth_states WHERE created_at < ?").bind(now() - 60 * 60 * 1000).run(),
+    env.DB.prepare("DELETE FROM media_tombstones WHERE deleted_at < ?").bind(now() - 180 * 24 * 60 * 60 * 1000).run(),
     env.DB.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(now()).run(),
     env.DB.prepare("DELETE FROM magic_links WHERE expires_at < ?").bind(now()).run(),
     // iOS app: used/expired pairing codes and web login requests, and devices whose token was revoked or expired.

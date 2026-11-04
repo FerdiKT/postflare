@@ -4,12 +4,14 @@ import { enforce } from "../billing/entitlements";
 import { createApiKey, forbidDemoUser, isInstanceAdmin, requireInstancePermission, requirePermission, wsId, type AppEnv } from "../lib/auth";
 import {
   EXPERIMENTAL_SETTING,
+  MEDIA_PUBLISHED_RETENTION_SETTING,
   MEDIA_RETENTION_SETTING,
   WORKSPACE_PROVIDERS_SETTING,
   allowedProvidersInput,
   baseUrl,
   experimentalEnabled,
   getSetting,
+  mediaPublishedRetentionDays,
   mediaRetentionDays,
   parseAllowedProviders,
   setSetting,
@@ -26,12 +28,17 @@ settingsRoutes.get("/settings", async (c) => {
     encryptionKeyFromSecret: !!c.env.SECRET_KEY,
     experimentalIntegrations: await experimentalEnabled(c.env.DB),
     mediaRetentionDays: await mediaRetentionDays(c.env.DB),
+    mediaPublishedRetentionDays: await mediaPublishedRetentionDays(c.env.DB),
     workspaceProviders: parseAllowedProviders(await getSetting(c.env.DB, WORKSPACE_PROVIDERS_SETTING)),
   });
 });
 
 settingsRoutes.put("/settings", requireInstancePermission("instance.settings.manage"), async (c) => {
-  const body = await c.req.json<{ publicUrl?: string; timezone?: string; experimentalIntegrations?: boolean; mediaRetentionDays?: number; workspaceProviders?: string[] | null }>();
+  const body = await c.req.json<{ publicUrl?: string; timezone?: string; experimentalIntegrations?: boolean; mediaRetentionDays?: number; mediaPublishedRetentionDays?: number; workspaceProviders?: string[] | null }>();
+  if (body.mediaPublishedRetentionDays !== undefined) {
+    const d = Number(body.mediaPublishedRetentionDays);
+    if (!Number.isInteger(d) || d < 0 || d > 3650) return c.json({ error: "Delete after publishing must be a whole number of days between 0 and 3650" }, 400);
+  }
   const workspaceProviders = body.workspaceProviders === undefined ? undefined : allowedProvidersInput(body.workspaceProviders, providers.map((p) => p.id));
   if (body.workspaceProviders !== undefined && workspaceProviders === undefined) return c.json({ error: "workspaceProviders must be null or an array of platform ids" }, 400);
   if (body.mediaRetentionDays !== undefined) {
@@ -57,6 +64,9 @@ settingsRoutes.put("/settings", requireInstancePermission("instance.settings.man
     await setSetting(c.env.DB, "timezone", String(body.timezone));
   }
   if (body.mediaRetentionDays !== undefined) await setSetting(c.env.DB, MEDIA_RETENTION_SETTING, String(Number(body.mediaRetentionDays)));
+  if (body.mediaPublishedRetentionDays !== undefined) {
+    await setSetting(c.env.DB, MEDIA_PUBLISHED_RETENTION_SETTING, String(Number(body.mediaPublishedRetentionDays)));
+  }
   if (body.experimentalIntegrations !== undefined) {
     await setSetting(c.env.DB, EXPERIMENTAL_SETTING, body.experimentalIntegrations === true ? "true" : "false");
   }

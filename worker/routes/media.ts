@@ -1,12 +1,12 @@
 import { Hono } from "hono";
-import type { MediaUsageDTO } from "../../shared/types";
+import type { MediaGcDTO, MediaStatusDTO, MediaUsageDTO } from "../../shared/types";
 import { enforce } from "../billing/entitlements";
 import { forbidInDemoWorkspace, isInstanceAdmin, requirePermission, wsId, type AppEnv } from "../lib/auth";
 import { avatarKey, avatarSignedValue, isAvatarName } from "../lib/avatars";
 import { verifySignature } from "../lib/crypto";
 import { makeThumbnail, mediaDto, mediaKeys, safeFilename, thumbKey, type MediaRow } from "../lib/media";
-import { mediaUsage, postsBlockingMediaDelete } from "../lib/media-lifecycle";
-import { baseUrl, mediaRetentionDays } from "../lib/settings";
+import { gcPublishedMedia, mediaUsage, postsBlockingMediaDelete, tombstoneStatement } from "../lib/media-lifecycle";
+import { baseUrl, mediaPublishedRetentionDays, mediaRetentionDays } from "../lib/settings";
 import { mediaEventStatement, utcDay } from "../lib/usage";
 import { newId, now } from "../lib/util";
 
@@ -126,12 +126,82 @@ mediaRoutes.get("/media", requirePermission("media.read"), async (c) => {
 /** Stored bytes of the workspace (and of the instance, for instance admins) next to the R2 Free plan's 10 GB. */
 mediaRoutes.get("/media/usage", requirePermission("media.read"), async (c) => {
   const admin = isInstanceAdmin(c.var.instancePermissions);
-  const [workspace, instance, retentionDays] = await Promise.all([
+  const [workspace, instance, retentionDays, publishedRetentionDays] = await Promise.all([
     mediaUsage(c.env.DB, wsId(c)),
     admin ? mediaUsage(c.env.DB, null) : Promise.resolve(null),
     mediaRetentionDays(c.env.DB),
+    mediaPublishedRetentionDays(c.env.DB),
   ]);
-  const body: MediaUsageDTO = { workspace, instance, freeTierBytes: 10 * 1024 ** 3, retentionDays };
+  const body: MediaUsageDTO = { workspace, instance, freeTierBytes: 10 * 1024 ** 3, retentionDays, publishedRetentionDays };
+  return c.json(body);
+});
+
+/**
+ * POST /api/media/gc { dryRun?, days? }: removes this workspace's files whose posts are all published, `days` (default:
+ * the instance's "Delete after publishing", else 3) after the last one went out. Up to 100 files per call.
+ */
+mediaRoutes.post("/media/gc", requirePermission("media.write"), noDemo, async (c) => {
+  const body = await c.req.json<{ dryRun?: unknown; days?: unknown }>().catch(() => ({}) as { dryRun?: unknown; days?: unknown });
+  if (body.days !== undefined && !(Number.isInteger(body.days) && (body.days as number) >= 0 && (body.days as number) <= 3650)) {
+    return c.json({ error: "days must be a whole number between 0 and 3650" }, 400);
+  }
+  const res: MediaGcDTO = await gcPublishedMedia(c.env, wsId(c), { dryRun: body.dryRun === true, days: body.days as number | undefined });
+  return c.json(res);
+});
+
+/**
+ * GET /api/media/status?id=med_… | filename=clip.mp4[&size=bytes]: was this file published? For local jobs that
+ * delete their copy once every post using it is out. Also answers for files already removed from storage.
+ */
+mediaRoutes.get("/media/status", requirePermission("media.read"), async (c) => {
+  const db = c.env.DB;
+  const ws = wsId(c);
+  const id = c.req.query("id")?.trim();
+  const filename = c.req.query("filename")?.trim();
+  const size = Number(c.req.query("size")) || null;
+  if (!id && !filename) return c.json({ error: "Pass id or filename" }, 400);
+  const cond = id ? "id = ?" : `filename = ?${size ? " AND size = ?" : ""}`;
+  const binds = id ? [ws, id] : [ws, filename, ...(size ? [size] : [])];
+  const [live, gone] = await db.batch<{ id: string; filename: string; size: number; created_at: number; deleted_at: number | null; reason: string | null }>([
+    db.prepare(`SELECT id, filename, size, created_at, NULL AS deleted_at, NULL AS reason FROM media WHERE workspace_id = ? AND ${cond} ORDER BY created_at DESC LIMIT 20`).bind(...binds),
+    db.prepare(`SELECT id, filename, size, created_at, deleted_at, reason FROM media_tombstones WHERE workspace_id = ? AND ${cond} ORDER BY created_at DESC LIMIT 20`).bind(...binds),
+  ]);
+  const files = [...live.results, ...gone.results.filter((g) => !live.results.some((l) => l.id === g.id))].sort((a, b) => b.created_at - a.created_at).slice(0, 20);
+  const matches: MediaStatusDTO["matches"] = [];
+  for (const f of files) {
+    const needle = `"${f.id}"`;
+    const { results: posts } = await db
+      .prepare(
+        `SELECT p.id, p.status, p.account_id, a.provider, a.name AS account_name, p.scheduled_at, p.published_at, p.external_url
+         FROM posts p LEFT JOIN accounts a ON a.id = p.account_id
+         WHERE p.workspace_id = ? AND (instr(p.media, ?) > 0 OR instr(p.thread, ?) > 0) ORDER BY COALESCE(p.published_at, p.scheduled_at, p.created_at) LIMIT 50`,
+      )
+      .bind(ws, needle, needle)
+      .all<{ id: string; status: string; account_id: string; provider: string | null; account_name: string | null; scheduled_at: number | null; published_at: number | null; external_url: string | null }>();
+    const active = posts.filter((p) => p.status !== "cancelled");
+    matches.push({
+      id: f.id,
+      filename: f.filename,
+      size: f.size,
+      createdAt: f.created_at,
+      inStorage: f.deleted_at === null,
+      deletedAt: f.deleted_at,
+      deletedReason: f.reason,
+      published: active.length > 0 && active.every((p) => p.status === "published"),
+      pending: active.filter((p) => p.status !== "published").length,
+      posts: posts.map((p) => ({
+        id: p.id,
+        status: p.status as MediaStatusDTO["matches"][number]["posts"][number]["status"],
+        accountId: p.account_id,
+        accountName: p.account_name,
+        provider: p.provider,
+        scheduledAt: p.scheduled_at,
+        publishedAt: p.published_at,
+        url: p.external_url,
+      })),
+    });
+  }
+  const body: MediaStatusDTO = { published: matches.length > 0 && matches[0].published, matches };
   return c.json(body);
 });
 
@@ -263,7 +333,12 @@ mediaRoutes.delete("/media/:id", requirePermission("media.write"), noDemo, async
   const db = c.env.DB;
   const del = db.prepare("DELETE FROM media WHERE id = ? AND workspace_id = ?").bind(c.req.param("id"), wsId(c));
   if (row.status === "ready") {
-    await db.batch([del, mediaEventStatement(db, { workspaceId: wsId(c), kind: "media_delete", bytes: row.size, mime: row.mime, t: now() })]);
+    const t = now();
+    await db.batch([
+      tombstoneStatement(db, "SELECT id FROM media WHERE id = ? AND workspace_id = ?", [c.req.param("id"), wsId(c)], t, "manual"),
+      del,
+      mediaEventStatement(db, { workspaceId: wsId(c), kind: "media_delete", bytes: row.size, mime: row.mime, t }),
+    ]);
   } else {
     await del.run();
   }

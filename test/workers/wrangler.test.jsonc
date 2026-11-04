@@ -26,7 +26,8 @@
     { "binding": "ACCESS_DB", "database_name": "postflare-access", "database_id": "access" },
     { "binding": "LEGAL_DB", "database_name": "postflare-legal", "database_id": "legal" },
     { "binding": "ACCOUNTS_DB", "database_name": "postflare-accounts", "database_id": "accounts" },
-    { "binding": "SUPPORT_DB", "database_name": "postflare-support", "database_id": "support" }
+    { "binding": "SUPPORT_DB", "database_name": "postflare-support", "database_id": "support" },
+    { "binding": "MEDIA_GC_DB", "database_name": "postflare-media-gc", "database_id": "media-gc" }
   ],
   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "postflare-media" }],
   "workflows": [{ "name": "postflare-publish", "binding": "PUBLISH_WORKFLOW", "class_name": "PublishWorkflow" }]

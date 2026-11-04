@@ -67,6 +67,10 @@ postflare media import https://example.com/photo.jpg
 postflare upload-link --note "Photos for Friday" --wait   # user uploads from a phone; prints media ids
 ```
 `post --media` also accepts local paths directly (uploaded first). Files >90MB use multipart automatically.
+After publishing: Postflare deletes a file from its storage 3 days (instance setting) after every post using it is
+published; `media gc [--dry-run] [--days N]` does it now. A job that keeps the source file locally can ask
+`postflare media status <path|med_id>` (exit 0 = every post using it is published, 2 = not yet, 3 = unknown file;
+`--json` lists the posts and URLs) and delete its copy only on 0, e.g. `postflare media status out/clip.mp4 && rm out/clip.mp4`.
 
 ## 5. Create the post
 

@@ -5,13 +5,17 @@
 //     platform that keeps linking to our copy (`Provider.hotlinksMedia`: DEV, Hashnode, Medium, Listmonk, Nostr,
 //     Farcaster, Discord embeds, webhooks);
 // (b) uploads that never finished (`status = 'uploading'`) after 2 days: the multipart upload is aborted;
-// (c) files sent through an upload link that no post ever used, after 7 days (only when retention is on).
+// (c) files sent through an upload link that no post ever used, after 7 days (only when retention is on);
+// (d) media whose posts are all published, N days ("Delete after publishing", default 3, 0 = off) after the last of
+//     them went out: the platforms keep their own copy. Never media of a draft/scheduled/publishing/needs_check/
+//     failed post, nor of a post on a platform that hotlinks our copy. `POST /api/media/gc` runs (d) for one workspace.
+// Every removed file leaves a row in `media_tombstones`, so `GET /api/media/status` can still tell it was published.
 // Demo workspaces are never touched (they have their own daily reset). Each delete re-checks its rule in the same
 // statement, so media attached to a post meanwhile is kept.
 
 import { providers } from "../providers/registry";
 import { mediaKeys } from "./media";
-import { mediaRetentionDays } from "./settings";
+import { DEFAULT_MEDIA_PUBLISHED_RETENTION_DAYS, mediaPublishedRetentionDays, mediaRetentionDays } from "./settings";
 import { mediaSweepEventStatement } from "./usage";
 import { now } from "./util";
 
@@ -57,6 +61,44 @@ export interface SweepStats {
   expired: number;
   staleUploads: number;
   unusedLinkMedia: number;
+  published: number;
+}
+
+/** What keeps a file: a post still in progress, or a published post on a platform that hotlinks our copy. */
+const keepRule = () =>
+  `p.status IN (${list(MEDIA_IN_USE_STATUSES)}) OR (p.status = 'published' AND (a.provider IS NULL OR a.provider IN (${list(hotlinkingProviders())})))`;
+
+/**
+ * Rule (d), alias m, one bind (the cut-off ms): every post using the file is published (or cancelled), at least one is
+ * published, and the last one went out before the cut-off.
+ */
+export const publishedRule = () =>
+  `m.status = 'ready' AND ${NOT_DEMO} AND NOT ${usedBy(keepRule())} AND ${usedBy("p.status = 'published'")}
+   AND NOT ${usedBy("p.status = 'published' AND COALESCE(p.published_at, p.updated_at) >= ?")}`;
+
+export interface GcResult {
+  dryRun: boolean;
+  days: number;
+  count: number;
+  bytes: number;
+  items: Array<{ id: string; filename: string; size: number }>;
+}
+
+/**
+ * `POST /api/media/gc` / `postflare media gc`: rule (d) for one workspace, at most `limit` files per call (the rest
+ * on the next call). `days` defaults to the instance setting (its default when the setting is off).
+ */
+export async function gcPublishedMedia(env: Env, workspaceId: string, opts: { days?: number; dryRun?: boolean; limit?: number } = {}): Promise<GcResult> {
+  const setting = await mediaPublishedRetentionDays(env.DB);
+  const days = opts.days ?? (setting > 0 ? setting : DEFAULT_MEDIA_PUBLISHED_RETENTION_DAYS);
+  const limit = opts.limit ?? SWEEP_BATCH;
+  const where = `m.workspace_id = ? AND ${publishedRule()}`;
+  const binds = [workspaceId, now() - days * DAY];
+  const { results: items } = await env.DB.prepare(`SELECT m.id, m.filename, m.size FROM media m WHERE ${where} ORDER BY m.created_at, m.id LIMIT ?`)
+    .bind(...binds, limit)
+    .all<{ id: string; filename: string; size: number }>();
+  if (!opts.dryRun && items.length) await deleteWhere(env, where, binds, limit, "published");
+  return { dryRun: !!opts.dryRun, days, count: items.length, bytes: items.reduce((n, i) => n + i.size, 0), items };
 }
 
 /** Daily cron. Returns what was removed. */
@@ -64,8 +106,8 @@ export async function sweepMedia(env: Env, opts: { batch?: number } = {}): Promi
   const db = env.DB;
   const t = now();
   const batch = opts.batch ?? SWEEP_BATCH;
-  const stats: SweepStats = { expired: 0, staleUploads: 0, unusedLinkMedia: 0 };
-  const retention = await mediaRetentionDays(db);
+  const stats: SweepStats = { expired: 0, staleUploads: 0, unusedLinkMedia: 0, published: 0 };
+  const [retention, publishedDays] = await Promise.all([mediaRetentionDays(db), mediaPublishedRetentionDays(db)]);
 
   // (b) Unfinished uploads: delete the row (guarded), then abort the multipart upload (Abort is a free R2 operation).
   const { results: stale } = await db
@@ -81,15 +123,17 @@ export async function sweepMedia(env: Env, opts: { batch?: number } = {}): Promi
     else await env.MEDIA.delete(row.r2_key).catch(() => {});
   }
   stats.staleUploads = stale.length;
+  // (d) Published everywhere, N days ago.
+  if (publishedDays > 0) stats.published = await deleteWhere(env, publishedRule(), [t - publishedDays * DAY], batch, "published");
   if (retention <= 0) return stats;
 
   // (a) Expired media nobody needs.
-  const keep = `p.status IN (${list(MEDIA_IN_USE_STATUSES)}) OR (p.status = 'published' AND (a.provider IS NULL OR a.provider IN (${list(hotlinkingProviders())})))`;
   stats.expired = await deleteWhere(
     env,
-    `m.status = 'ready' AND m.created_at < ? AND ${NOT_DEMO} AND NOT ${usedBy(keep)}`,
+    `m.status = 'ready' AND m.created_at < ? AND ${NOT_DEMO} AND NOT ${usedBy(keepRule())}`,
     [t - retention * DAY],
     batch,
+    "retention",
   );
   // (c) Upload-link files never used by any post.
   stats.unusedLinkMedia = await deleteWhere(
@@ -97,19 +141,22 @@ export async function sweepMedia(env: Env, opts: { batch?: number } = {}): Promi
     `m.source = 'upload_link' AND m.status = 'ready' AND m.created_at < ? AND ${NOT_DEMO} AND NOT ${usedBy("1")}`,
     [t - UNUSED_LINK_MEDIA_MS],
     batch,
+    "unused_link",
   );
   return stats;
 }
 
 /** Delete up to `limit` media rows matching `where` (alias m) in one guarded statement, then their R2 objects. */
-async function deleteWhere(env: Env, where: string, binds: unknown[], limit: number): Promise<number> {
+async function deleteWhere(env: Env, where: string, binds: unknown[], limit: number, reason: string): Promise<number> {
   const db = env.DB;
   const ids = `SELECT m.id FROM media m WHERE ${where} ORDER BY m.created_at, m.id LIMIT ?`;
-  // One batch (one transaction): the usage events of the files about to go (per workspace), then the DELETE. Both
+  const t = now();
+  // One batch (one transaction): the usage events and tombstones of the files about to go, then the DELETE. All
   // evaluate the same rule on the same snapshot. The rule is evaluated by the DELETE itself: a file attached to a post
   // since the run started is kept.
-  const [, deleted] = await db.batch<{ id: string; r2_key: string; has_thumb: number }>([
-    mediaSweepEventStatement(db, ids, [...binds, limit], now()),
+  const [, , deleted] = await db.batch<{ id: string; r2_key: string; has_thumb: number }>([
+    mediaSweepEventStatement(db, ids, [...binds, limit], t),
+    tombstoneStatement(db, ids, [...binds, limit], t, reason),
     db.prepare(`DELETE FROM media WHERE id IN (${ids}) RETURNING id, r2_key, has_thumb`).bind(...binds, limit),
   ]);
   const results = deleted.results;
@@ -119,6 +166,16 @@ async function deleteWhere(env: Env, where: string, binds: unknown[], limit: num
     await env.MEDIA.delete(mediaKeys(results)).catch((err) => console.error("media sweep: R2 delete failed", err));
   }
   return results.length;
+}
+
+/** Remember files about to be removed (`ids`: a SELECT of media ids). */
+export function tombstoneStatement(db: D1Database, ids: string, binds: unknown[], t: number, reason: string): D1PreparedStatement {
+  return db
+    .prepare(
+      `INSERT OR REPLACE INTO media_tombstones (id, workspace_id, filename, size, created_at, deleted_at, reason)
+       SELECT id, workspace_id, filename, size, created_at, ?, ? FROM media WHERE id IN (${ids})`,
+    )
+    .bind(t, reason, ...binds);
 }
 
 /** GET /api/media/usage. */

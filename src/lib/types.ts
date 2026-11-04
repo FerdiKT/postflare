@@ -32,6 +32,8 @@ export interface AppSettings {
   experimentalIntegrations?: boolean;
   /** Days before unused media is removed by the daily cleanup; 0 = keep forever. */
   mediaRetentionDays?: number;
+  /** Days after the last publish before a file whose posts are all published is removed; 0 = off. */
+  mediaPublishedRetentionDays?: number;
   /** Platforms new workspaces may use (provider ids); null = every platform. */
   workspaceProviders?: string[] | null;
 }
